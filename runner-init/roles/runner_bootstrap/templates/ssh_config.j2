@@ -1,0 +1,12 @@
+StrictHostKeyChecking no
+
+Host *.cloudlab.us
+    User {{ cloudlab_user }}
+    IdentityFile {{ ssh_identity_file }}
+    IdentitiesOnly yes
+
+{% for alias, fqdn in cloudlab_hosts.items() %}
+Host {{ alias }}
+    Hostname {{ fqdn }}
+    User {{ cloudlab_user }}
+{% endfor %}

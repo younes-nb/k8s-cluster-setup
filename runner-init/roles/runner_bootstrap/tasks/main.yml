@@ -49,25 +49,53 @@
     group: "{{ ansible_user }}"
     mode: "0700"
 
-- name: Copy SSH private key to runner
+- name: Copy SSH private key to runner (optional)
   ansible.builtin.copy:
     src: "{{ ssh_private_key_src }}"
-    dest: "/home/{{ ansible_user }}/.ssh/{{ ssh_key_dest_basename }}"
+    dest: "{{ ssh_identity_file }}"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: "0600"
-  when: install_ssh_keys | bool and ssh_private_key_src | length > 0
+  when: install_ssh_keys | bool
 
-- name: Copy SSH public key to runner
+- name: Copy SSH public key to runner (optional)
   ansible.builtin.copy:
     src: "{{ ssh_public_key_src }}"
-    dest: "/home/{{ ansible_user }}/.ssh/{{ ssh_key_dest_basename }}.pub"
+    dest: "{{ ssh_identity_file }}.pub"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: "0644"
-  when: install_ssh_keys | bool and ssh_public_key_src | length > 0
+  when: install_ssh_keys | bool
 
-- name: Ensure Git is ready and repo directory exists
+- name: Check SSH private key exists on runner
+  ansible.builtin.stat:
+    path: "{{ ssh_identity_file }}"
+  register: runner_key
+  become: false
+
+- name: Fail if SSH private key is missing on runner
+  ansible.builtin.fail:
+    msg: >
+      SSH key missing at {{ ssh_identity_file }}.
+      Either copy it manually to the runner (chmod 600), or set install_ssh_keys=true and provide ssh_private_key_src.
+  when: not runner_key.stat.exists
+
+- name: Ensure correct permissions on SSH private key
+  ansible.builtin.file:
+    path: "{{ ssh_identity_file }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+
+- name: Write ~/.ssh/config (CloudLab aliases)
+  ansible.builtin.template:
+    src: "ssh_config.j2"
+    dest: "/home/{{ ansible_user }}/.ssh/config"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+
+- name: Ensure Git repo directory exists
   ansible.builtin.file:
     path: "{{ cluster_repo_dest }}"
     state: directory
@@ -109,7 +137,7 @@
   ansible.builtin.fail:
     msg: >
       Missing overlay at {{ kubespray_overlay_dir }}/inventory/lab.
-      Recommended: put your customized inventory.ini + group_vars under kubespray-overlay/inventory/lab in your repo.
+      Put your customized inventory.ini + group_vars under kubespray-overlay/inventory/lab in your repo.
   when: not overlay_stat.stat.exists
 
 - name: Create kubespray inventory/lab dir
@@ -127,10 +155,10 @@
     {{ kubespray_dest }}/inventory/lab/
   become: false
 
-- name: Add cluster hosts to known_hosts (best-effort)
+- name: Add cluster FQDNs to known_hosts (best-effort)
   ansible.builtin.shell: |
     set -e
-    for h in {{ cluster_hosts | join(' ') }}; do
+    for h in {{ cloudlab_hosts.values() | list | join(' ') }}; do
       ssh-keyscan -H "$h" 2>/dev/null || true
     done
   args:
@@ -158,3 +186,4 @@
       - "Repo: {{ cluster_repo_dest }}"
       - "Kubespray: {{ kubespray_dest }}"
       - "Overlay applied from: {{ kubespray_overlay_dir }}/inventory/lab -> {{ kubespray_dest }}/inventory/lab"
+      - "SSH aliases installed in /home/{{ ansible_user }}/.ssh/config"
