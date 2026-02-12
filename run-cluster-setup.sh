@@ -88,6 +88,10 @@ need_cmd bash
 [[ -d "$LAB_DIR" && -d "$KUBESPRAY_DIR" ]] || { err "Run from repo root. Missing $LAB_DIR/ or $KUBESPRAY_DIR/"; exit 1; }
 [[ -f "$GET_KUBECONFIG" ]] || { err "Missing $GET_KUBECONFIG in repo root"; exit 1; }
 
+step_banner "Generating dynamic cluster IP variables"
+ansible-playbook -i localhost, -c local tools/generate-cluster-ips.yml
+ok "Generated dynamic IP variables"
+
 # ---------- 1) Preparing play ----------
 if should_run preparing; then
   step_banner "Running preparing playbook (lab-setup)"

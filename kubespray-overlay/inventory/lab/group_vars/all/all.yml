@@ -13,7 +13,7 @@ bin_dir: /usr/local/bin
 ## External LB example config
 apiserver_loadbalancer_domain_name: "vip.younesnb.linkpc.net"
 loadbalancer_apiserver:
-  address: 128.110.218.121
+  address: "{{ lb_ip }}"
   port: 6443
 
 ## Internal loadbalancers for apiservers

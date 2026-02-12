@@ -1,6 +1,8 @@
 ---
 - name: Bootstrap CloudLab runner host
-  hosts: runner
+  hosts: runner_hosts
   become: true
+  vars_files:
+    - ../group_vars/all.yml
   roles:
     - runner_bootstrap

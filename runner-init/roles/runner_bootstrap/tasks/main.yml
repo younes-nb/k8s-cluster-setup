@@ -41,12 +41,30 @@
     state: present
   when: ansible_facts.os_family in ["RedHat", "Rocky", "AlmaLinux", "Fedora"]
 
+- name: Get home directory for ansible_user
+  ansible.builtin.command: "getent passwd {{ ansible_user }}"
+  register: _passwd
+  changed_when: false
+
+- name: Set runner_home fact
+  ansible.builtin.set_fact:
+    runner_home: "{{ _passwd.stdout.split(':')[5] }}"
+
+- name: Get primary group for ansible_user
+  ansible.builtin.command: "id -gn {{ ansible_user }}"
+  register: _primary_group
+  changed_when: false
+
+- name: Set runner_user_group fact
+  ansible.builtin.set_fact:
+    runner_user_group: "{{ _primary_group.stdout }}"
+
 - name: Ensure ~/.ssh exists
   ansible.builtin.file:
-    path: "/home/{{ ansible_user }}/.ssh"
+    path: "{{ runner_home }}/.ssh"
     state: directory
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0700"
 
 - name: Copy SSH private key to runner (optional)
@@ -54,18 +72,18 @@
     src: "{{ ssh_private_key_src }}"
     dest: "{{ ssh_identity_file }}"
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0600"
-  when: install_ssh_keys | bool
+  when: (install_ssh_keys | default(false)) | bool
 
 - name: Copy SSH public key to runner (optional)
   ansible.builtin.copy:
     src: "{{ ssh_public_key_src }}"
     dest: "{{ ssh_identity_file }}.pub"
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0644"
-  when: install_ssh_keys | bool
+  when: (install_ssh_keys | default(false)) | bool
 
 - name: Check SSH private key exists on runner
   ansible.builtin.stat:
@@ -84,23 +102,45 @@
   ansible.builtin.file:
     path: "{{ ssh_identity_file }}"
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0600"
 
 - name: Write ~/.ssh/config (CloudLab aliases)
   ansible.builtin.template:
     src: "ssh_config.j2"
-    dest: "/home/{{ ansible_user }}/.ssh/config"
+    dest: "{{ runner_home }}/.ssh/config"
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0600"
+
+- name: Ensure /etc/ssh/ssh_config.d exists
+  ansible.builtin.file:
+    path: /etc/ssh/ssh_config.d
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Ensure ssh_config includes ssh_config.d snippets
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/ssh_config
+    regexp: '^Include /etc/ssh/ssh_config\.d/\*\.conf$'
+    line: 'Include /etc/ssh/ssh_config.d/*.conf'
+    insertafter: BOF
+  become: true
+
+- name: Install CloudLab SSH aliases system-wide
+  ansible.builtin.template:
+    src: "ssh_config_system_cloudlab.j2"
+    dest: "/etc/ssh/ssh_config.d/99-cloudlab-aliases.conf"
+    mode: "0644"
+  become: true
 
 - name: Ensure Git repo directory exists
   ansible.builtin.file:
     path: "{{ cluster_repo_dest }}"
     state: directory
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0755"
 
 - name: Clone your cluster repo
@@ -124,7 +164,7 @@
     path: "{{ kubespray_dest }}"
     state: directory
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     recurse: true
 
 - name: Fail if overlay directory is missing
@@ -145,7 +185,7 @@
     path: "{{ kubespray_dest }}/inventory/lab"
     state: directory
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0755"
 
 - name: Rsync overlay inventory into Kubespray
@@ -169,10 +209,10 @@
 
 - name: Write scanned keys into known_hosts (best-effort)
   ansible.builtin.lineinfile:
-    path: "/home/{{ ansible_user }}/.ssh/known_hosts"
+    path: "{{ runner_home }}/.ssh/known_hosts"
     create: true
     owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    group: "{{ runner_user_group }}"
     mode: "0644"
     line: "{{ item }}"
     state: present
@@ -186,4 +226,4 @@
       - "Repo: {{ cluster_repo_dest }}"
       - "Kubespray: {{ kubespray_dest }}"
       - "Overlay applied from: {{ kubespray_overlay_dir }}/inventory/lab -> {{ kubespray_dest }}/inventory/lab"
-      - "SSH aliases installed in /home/{{ ansible_user }}/.ssh/config"
+      - "SSH aliases installed in {{ runner_home }}/.ssh/config"

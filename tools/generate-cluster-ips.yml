@@ -1,0 +1,53 @@
+---
+- name: Resolve CloudLab hostnames to IPv4 and generate vars files
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../cluster-topology.yml
+
+  tasks:
+    - name: Resolve IPv4 for each CloudLab host (via getent)
+      ansible.builtin.command: >
+        bash -lc "getent ahostsv4 {{ item.value }} | awk 'NR==1{print $1}'"
+      loop: "{{ cloudlab_hosts | dict2items }}"
+      register: resolved
+      changed_when: false
+
+    - name: Build cloudlab_ips dict (alias -> ip)
+      ansible.builtin.set_fact:
+        cloudlab_ips: >-
+          {{
+            cloudlab_ips | default({}) |
+            combine({ item.item.key: item.stdout })
+          }}
+      loop: "{{ resolved.results }}"
+
+    - name: Fail if any host did not resolve
+      ansible.builtin.assert:
+        that:
+          - cloudlab_ips[item.key] is match('^([0-9]{1,3}\.){3}[0-9]{1,3}$')
+        fail_msg: "Failed to resolve IPv4 for {{ item.key }} ({{ item.value }})"
+      loop: "{{ cloudlab_hosts | dict2items }}"
+
+    - name: Build derived lists
+      ansible.builtin.set_fact:
+        lb_ip: "{{ cloudlab_ips.lb }}"
+        master_ips: "{{ kube_control_plane_hosts | map('extract', cloudlab_ips) | list }}"
+        worker_ips: "{{ kube_worker_hosts | map('extract', cloudlab_ips) | list }}"
+        cluster_trusted_ips: "{{ [cloudlab_ips.lb] + (kube_control_plane_hosts | map('extract', cloudlab_ips) | list) + (kube_worker_hosts | map('extract', cloudlab_ips) | list) }}"
+
+    - name: Write generated vars into lab-setup and kubespray-overlay
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        mode: "0644"
+        content: |
+          # GENERATED FILE - do not edit
+          cloudlab_ips: {{ cloudlab_ips }}
+          lb_ip: "{{ lb_ip }}"
+          master_ips: {{ master_ips }}
+          worker_ips: {{ worker_ips }}
+          cluster_trusted_ips: {{ cluster_trusted_ips }}
+      loop:
+        - ../lab-setup/inventory/group_vars/all/cluster_ips.yml
+        - ../kubespray-overlay/inventory/lab/group_vars/all/cluster_ips.yml

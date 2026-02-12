@@ -284,11 +284,7 @@ system_ephemeral_storage_reserved: 2Gi
 
 ## Supplementary addresses that can be added in kubernetes ssl keys.
 ## That can be useful for example to setup a keepalived virtual IP
-supplementary_addresses_in_ssl_keys:
-  - 128.110.218.121
-  - 128.110.218.140
-  - 128.110.218.120
-  - 128.110.218.144
+supplementary_addresses_in_ssl_keys: "{{ [lb_ip] + master_ips }}"
 
 ## Running on top of openstack vms with cinder enabled may lead to unschedulable pods due to NoVolumeZoneConflict restriction in kube-scheduler.
 ## See https://github.com/kubernetes-sigs/kubespray/issues/2141

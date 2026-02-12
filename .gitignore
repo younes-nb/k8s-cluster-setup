@@ -1,3 +1,5 @@
 kubespray/
 .venv/
 *.log
+lab-setup/inventory/group_vars/all/cluster_ips.yml
+kubespray-overlay/inventory/lab/group_vars/all/cluster_ips.yml

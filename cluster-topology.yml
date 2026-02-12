@@ -1,0 +1,11 @@
+cloudlab_hosts:
+  lb: hp006.utah.cloudlab.us
+  master1: hp005.utah.cloudlab.us
+  master2: hp009.utah.cloudlab.us
+  master3: hp019.utah.cloudlab.us
+  worker1: hp007.utah.cloudlab.us
+  worker2: hp004.utah.cloudlab.us
+  worker3: hp033.utah.cloudlab.us
+
+kube_control_plane_hosts: [master1, master2, master3]
+kube_worker_hosts: [worker1, worker2, worker3]

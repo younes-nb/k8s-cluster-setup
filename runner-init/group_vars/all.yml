@@ -12,7 +12,7 @@ kubespray_overlay_dir: "{{ cluster_repo_dest }}/kubespray-overlay"
 
 cloudlab_user: "younes02"
 ssh_key_dest_basename: "id_ed25519"
-ssh_identity_file: "/home/{{ ansible_user }}/.ssh/{{ ssh_key_dest_basename }}"
+ssh_identity_file: "{{ runner_home }}/.ssh/{{ ssh_key_dest_basename }}"
 
 install_ssh_keys: true
 ssh_private_key_src: "~/.ssh/id_ed25519"

@@ -19,6 +19,6 @@ ingress_nodeport_http: 30080
 ingress_nodeport_https: 30081
 
 k8s_masters:
-  - { name: "master1", ip: "128.110.218.140" }
-  - { name: "master2", ip: "128.110.218.120" }
-  - { name: "master3", ip: "128.110.218.144" }
+  - { name: "master1", ip: "{{ cloudlab_ips.master1 }}" }
+  - { name: "master2", ip: "{{ cloudlab_ips.master2 }}" }
+  - { name: "master3", ip: "{{ cloudlab_ips.master3 }}" }
