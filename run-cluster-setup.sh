@@ -135,8 +135,8 @@ if should_run kubespray; then
   pip install --upgrade pip >/dev/null
   pip install -r "$KS_REQUIREMENTS" >/dev/null
 
-  info "ansible-playbook -i inventory/lab/inventory.ini cluster.yml -b"
-  ansible-playbook -i inventory/lab/inventory.ini cluster.yml -b ${ANSIBLE_VAULT_FLAG:-}
+  info "ansible-playbook -i ../kubespray-overlay/inventory/lab/inventory.ini cluster.yml -b"
+  ansible-playbook -i ../kubespray-overlay/inventory/lab/inventory.ini cluster.yml -b ${ANSIBLE_VAULT_FLAG:-}
   deactivate
   ok "Kubespray cluster deployment finished"
   popd >/dev/null
