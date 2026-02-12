@@ -1,0 +1,12 @@
+---
+- import_tasks: cert_issuer.yaml
+  tags: [cert-issuer]
+
+- import_tasks: monitoring.yaml
+  tags: [monitoring]
+
+- import_tasks: istio.yaml
+  tags: [istio]
+
+- import_tasks: online_boutique.yaml
+  tags: [online-boutique]

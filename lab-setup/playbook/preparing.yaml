@@ -1,0 +1,8 @@
+---
+- name: install and configure nodes
+  hosts: nodes
+  become: true
+  gather_facts: yes
+  roles:
+    - role: preparing_server
+      tags: preparing_server

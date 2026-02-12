@@ -1,0 +1,102 @@
+# basic package list for installation
+packages:
+- sysstat
+- wget
+- git
+- vim
+- nano
+- bash-completion
+- curl
+- htop
+- iftop
+- jq
+- ncdu
+- unzip
+- net-tools
+- dnsutils
+- atop
+- sudo
+- ntp
+- fail2ban
+- software-properties-common
+- apache2-utils
+- tcpdump
+- telnet
+- axel
+- iptables-persistent
+- ntp
+- auditd
+- libpwquality-common
+- cracklib-runtime
+
+# sshd configuration
+sshd_config:
+  ListenAddress: 0.0.0.0
+  PermitRootLogin: without-password
+  PasswordAuthentication: "yes"
+
+# iptables configuration
+iptables:
+  network_adapter_access:
+    - lo
+  trusted_IP:
+    - 192.168.100.1
+    - 128.110.218.121
+    - 128.110.218.140
+    - 128.110.218.120
+    - 128.110.218.144
+    - 128.110.218.126
+    - 128.110.218.146
+    - 128.110.218.141
+  trusted_Range:
+    - 10.233.0.0/18
+    - 10.233.64.0/18
+
+# fail2ban configuration
+fail2ban:
+  bantime: 10m
+  findtime: 10m
+  maxretry: 5
+  ignore_ip: 127.0.0.1 ::1 192.168.100.0/24
+
+# setion timeout setting (seconds)
+timeout_time: 600
+
+# auditd vars
+auditd_apply_audit_rules: 'yes'
+auditd_action_mail_acct: root
+auditd_admin_space_left_action: suspend
+auditd_disk_error_action: suspend
+auditd_disk_full_action: suspend
+auditd_max_log_file: 8
+auditd_max_log_file_action: keep_logs
+auditd_mode: 1
+auditd_num_logs: 5
+auditd_space_left: 75
+auditd_space_left_action: email
+grub_audit_backlog_cmdline: audit_backlog_limit=8192
+grub_audit_cmdline: audit=1
+
+# dns variables
+dns: 8.8.8.8 1.1.1.1
+fallback_dns: 9.9.9.9 4.2.2.4
+dnssec: allow-downgrade
+dns_over_tls: opportunistic
+
+# Limit.conf variables
+limit_nofile_hard: 1024
+limit_nofile_soft: 512
+limit_nproc_hard: 1024
+limit_nproc_soft: 512
+
+# sysctll configuration variables
+sysctl_config:
+  net.ipv4.ip_forward: 1
+  net.ipv4.conf.all.forwarding: 1
+  net.ipv6.conf.all.forwarding: 1
+  vm.max_map_count: 262144
+  fs.file-max: 1500000
+  net.ipv4.tcp_tw_reuse: 1
+  net.netfilter.nf_conntrack_tcp_timeout_established: 900
+  net.netfilter.nf_conntrack_tcp_timeout_close_wait: 10
+  net.netfilter.nf_conntrack_tcp_timeout_syn_recv: 30

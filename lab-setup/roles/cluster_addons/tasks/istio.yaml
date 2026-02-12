@@ -1,0 +1,179 @@
+---
+- name: Add Istio Helm repo
+  kubernetes.core.helm_repository:
+    name: "{{ istio_repo_name }}"
+    repo_url: "{{ istio_repo_url }}"
+
+- name: Ensure Istio namespace exists
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ istio_ns }}"
+
+- name: Install/upgrade istio-base
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path }}"
+    name: istio-base
+    chart_ref: "{{ istio_repo_name }}/base"
+    release_namespace: "{{ istio_ns }}"
+    create_namespace: false
+    wait: true
+    values:
+      defaultRevision: "default"
+
+- name: Install/upgrade istiod
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path }}"
+    name: istiod
+    chart_ref: "{{ istio_repo_name }}/istiod"
+    release_namespace: "{{ istio_ns }}"
+    create_namespace: false
+    wait: true
+    values:
+      meshConfig:
+        enablePrometheusMerge: true
+      pilot:
+        serviceMonitor:
+          enabled: true
+
+- name: Apply Istio control-plane ServiceMonitor
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: prometheus-istio-controlplane
+        namespace: "{{ istio_ns }}"
+        labels:
+          release: "{{ prom_release_label }}"
+      spec:
+        jobLabel: istio
+        selector:
+          matchExpressions:
+            - key: istio
+              operator: In
+              values: [mixer, pilot, galley, citadel, sidecar-injector]
+        namespaceSelector:
+          any: true
+        endpoints:
+          - port: http-monitoring
+            interval: 15s
+          - port: http-policy-monitoring
+            interval: 15s
+
+- name: Apply Istio data-plane ServiceMonitor
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: prometheus-istio-dataplane
+        namespace: "{{ istio_ns }}"
+        labels:
+          release: "{{ prom_release_label }}"
+      spec:
+        selector:
+          matchExpressions:
+            - key: istio-prometheus-ignore
+              operator: DoesNotExist
+        namespaceSelector:
+          any: true
+        jobLabel: envoy-stats
+        endpoints:
+          - path: /stats/prometheus
+            targetPort: http-envoy-prom
+            interval: 15s
+            relabelings:
+              - sourceLabels: [__meta_kubernetes_pod_container_port_name]
+                action: keep
+                regex: '.*-envoy-prom'
+              - action: labelmap
+                regex: "__meta_kubernetes_pod_label_(.+)"
+              - sourceLabels: [__meta_kubernetes_namespace]
+                action: replace
+                targetLabel: namespace
+              - sourceLabels: [__meta_kubernetes_pod_name]
+                action: replace
+                targetLabel: pod_name
+
+- name: Ensure git is present (for shallow clone of dashboards)
+  ansible.builtin.apt:
+    name: git
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Shallow clone Istio repo (dashboards only)
+  ansible.builtin.git:
+    repo: "{{ istio_git_repo }}"
+    dest: "{{ istio_dash_tmp }}"
+    version: "{{ istio_git_branch }}"
+    depth: 1
+  register: _git_fetch
+
+- name: Find Istio Grafana dashboard JSONs
+  ansible.builtin.find:
+    paths: "{{ istio_dash_tmp }}/{{ istio_dashboards_rel_path }}"
+    patterns: "*.json"
+    recurse: false
+  register: istio_dash_files
+
+- name: Read dashboard files (slurp from remote)
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ istio_dash_files.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: istio_dash_slurped
+
+- name: Ensure monitoring namespace exists (for Grafana dashboards)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ monitoring_ns }}"
+
+- name: Create/Update Grafana dashboard ConfigMaps (Istio)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition: >-
+      {{
+        {
+          "apiVersion": "v1",
+          "kind": "ConfigMap",
+          "metadata": {
+            "name": (
+              "grafana-dashboard-" +
+              (item.source | basename | regex_replace('\\.json$', ''))
+            ),
+            "namespace": monitoring_ns,
+            "labels": {
+              "grafana_dashboard": "1",
+              "grafana_folder": istio_grafana_folder
+            }
+          },
+          "data": {
+            (item.source | basename): (item.content | b64decode)
+          }
+        }
+      }}
+  loop: "{{ istio_dash_slurped.results }}"
+  loop_control:
+    label: "{{ item.source | basename }}"
+
+- name: Remove cloned Istio repo (dashboards) after import
+  ansible.builtin.file:
+    path: "{{ istio_dash_tmp }}"
+    state: absent

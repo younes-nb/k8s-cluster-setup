@@ -1,0 +1,16 @@
+---
+- name: Post-cluster add-ons
+  hosts: master1
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: k8s_ansible_deps
+      tags: [deps]
+
+    - role: cluster_addons
+      tags:
+        - cert-issuer
+        - monitoring
+        - istio
+        - online-boutique

@@ -1,0 +1,26 @@
+---
+cluster_repo_dest: "/home/{{ ansible_user }}/cluster-repo"
+
+cluster_repo_url: "GIT_URL_OF_YOUR_REPO"
+cluster_repo_version: "main"
+
+kubespray_git_url: "https://github.com/kubernetes-sigs/kubespray.git"
+kubespray_version: "v2.30.0"
+
+kubespray_dest: "{{ cluster_repo_dest }}/kubespray"
+
+kubespray_overlay_dir: "{{ cluster_repo_dest }}/kubespray-overlay"
+
+cluster_hosts:
+  - lb
+  - master1
+  - master2
+  - master3
+  - worker1
+  - worker2
+  - worker3
+
+install_ssh_keys: false
+ssh_private_key_src: ""
+ssh_public_key_src: ""
+ssh_key_dest_basename: "id_rsa"

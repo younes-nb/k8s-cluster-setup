@@ -1,0 +1,207 @@
+---
+- name: Read kube-proxy ConfigMap
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: ConfigMap
+    name: kube-proxy
+    namespace: kube-system
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: kp_cm
+
+- name: Adjust metricsBindAddress inside kube-proxy config (config.conf)
+  vars:
+    original: "{{ (kp_cm.resources[0].data['config.conf'] | default('')) }}"
+    patched: "{{ original | regex_replace('metricsBindAddress:\\s*127\\.0\\.0\\.1:10249','metricsBindAddress: 0.0.0.0:10249') }}"
+  when: kp_cm.resources | length > 0 and original != ''
+  set_fact:
+    kubeproxy_config_original: "{{ original }}"
+    kubeproxy_config_patched: "{{ patched }}"
+
+- name: Apply patched kube-proxy ConfigMap if changed
+  when:
+    - kubeproxy_config_original is defined
+    - kubeproxy_config_patched is defined
+    - kubeproxy_config_original != kubeproxy_config_patched
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: kube-proxy
+        namespace: kube-system
+      data:
+        config.conf: "{{ kubeproxy_config_patched }}"
+  register: kp_cm_applied
+
+- name: Rollout-restart kube-proxy DaemonSet if config changed
+  when: kp_cm_applied is changed
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata:
+        name: kube-proxy
+        namespace: kube-system
+      spec:
+        template:
+          metadata:
+            annotations:
+              kubectl.kubernetes.io/restartedAt: "{{ lookup('pipe', 'date -Is') }}"
+
+- name: Ensure monitoring namespace exists
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ monitoring_ns }}"
+
+- name: Read etcd certs from node
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: etcd_certs
+  loop:
+    - /etc/kubernetes/pki/etcd/ca.crt
+    - /etc/kubernetes/pki/apiserver-etcd-client.crt
+    - /etc/kubernetes/pki/apiserver-etcd-client.key
+
+- name: Build etcd secret data map (base64 as required by k8s)
+  set_fact:
+    etcd_secret_data:
+      etcd-ca: "{{ (etcd_certs.results[0].content) }}"
+      etcd-client: "{{ (etcd_certs.results[1].content) }}"
+      etcd-client-key: "{{ (etcd_certs.results[2].content) }}"
+
+- name: Create/ensure Secret {{ monitoring_ns }}/etcd-client-cert
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: etcd-client-cert
+        namespace: "{{ monitoring_ns }}"
+      type: Opaque
+      data: "{{ etcd_secret_data }}"
+
+- name: Add Prometheus Community Helm repo
+  kubernetes.core.helm_repository:
+    name: "{{ prom_repo_name }}"
+    repo_url: "{{ prom_repo_url }}"
+
+- name: Generate htpasswd line for Prometheus basic auth
+  ansible.builtin.command: >
+    htpasswd -nbm {{ prom_basic_user }} {{ prom_basic_pass }}
+  register: _htpasswd_line
+  changed_when: false
+
+- name: Create/Update basic-auth secret for Prometheus ingress
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: prometheus-auth
+        namespace: "{{ monitoring_ns }}"
+      type: Opaque
+      stringData:
+        auth: "{{ _htpasswd_line.stdout }}"
+
+- name: Install/upgrade kube-prometheus-stack (Prometheus + Grafana)
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path }}"
+    name: "{{ prom_release_label }}"
+    chart_ref: "{{ prom_repo_name }}/kube-prometheus-stack"
+    release_namespace: "{{ monitoring_ns }}"
+    create_namespace: true
+    wait: true
+    values:
+      grafana:
+        defaultDashboardsTimezone: "{{ grafana_timezone }}"
+        adminPassword: "{{ grafana_admin_password }}"
+        ingress:
+          enabled: true
+          annotations:
+            cert-manager.io/cluster-issuer: "{{ cert_issuer_name }}"
+            kubernetes.io/tls-acme: "true"
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          hosts: ["{{ grafana_host }}"]
+          ingressClassName: "{{ ingress_class }}"
+          tls:
+            - secretName: grafana-general-tls
+              hosts: ["{{ grafana_host }}"]
+        persistence:
+          type: pvc
+          enabled: true
+          storageClassName: "{{ storage_class }}"
+          accessModes: ["ReadWriteOnce"]
+          size: "{{ grafana_pvc_size }}"
+          finalizers: ["kubernetes.io/pvc-protection"]
+
+      kubeControllerManager:
+        service: { port: 10257, targetPort: 10257 }
+        serviceMonitor: { https: true, insecureSkipVerify: true }
+
+      kubeEtcd:
+        enabled: true
+        service:
+          enabled: true
+          port: 2381
+          targetPort: 2381
+        serviceMonitor:
+          enabled: true
+          scheme: http
+          insecureSkipVerify: false
+          serverName: localhost
+          caFile: /etc/prometheus/secrets/etcd-client-cert/etcd-ca
+          certFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client
+          keyFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client-key
+
+      kubeScheduler:
+        service: { port: 10259, targetPort: 10259 }
+        serviceMonitor: { https: true, insecureSkipVerify: true }
+
+      kubeProxy:
+        service: { port: 10249, targetPort: 10249 }
+
+      kubelet:
+        enabled: true
+        namespace: kube-system
+
+      prometheus:
+        ingress:
+          enabled: true
+          annotations:
+            cert-manager.io/cluster-issuer: "{{ cert_issuer_name }}"
+            kubernetes.io/tls-acme: "true"
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
+            nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+            nginx.ingress.kubernetes.io/auth-secret: "prometheus-auth"
+            nginx.ingress.kubernetes.io/auth-type: "basic"
+            nginx.ingress.kubernetes.io/affinity: "cookie"
+          hosts: ["{{ prometheus_host }}"]
+          ingressClassName: "{{ ingress_class }}"
+          tls:
+            - secretName: prometheus-general-tls
+              hosts: ["{{ prometheus_host }}"]
+        prometheusSpec:
+          retention: "{{ prometheus_retention }}"
+          storageSpec:
+            volumeClaimTemplate:
+              spec:
+                storageClassName: "{{ storage_class }}"
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: "{{ prometheus_pvc_size }}"
+          secrets:
+            - etcd-client-cert

@@ -1,0 +1,155 @@
+---
+- name: Ensure Online Boutique namespace exists (optionally enable Istio injection)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ ob_ns }}"
+        labels: >-
+          {{
+            {'istio-injection': 'enabled'} if ob_enable_istio_injection | bool else {}
+          }}
+
+- name: Ensure git is installed
+  ansible.builtin.apt:
+    name: git
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Clone/Update Online Boutique repo (shallow)
+  ansible.builtin.git:
+    repo: "{{ ob_repo_url }}"
+    dest: "{{ ob_clone_dir }}"
+    version: "{{ ob_repo_version }}"
+    depth: 1
+    force: true
+  register: _ob_git
+
+- name: Apply Online Boutique manifests
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ ob_ns }}"
+    apply -f "{{ ob_clone_dir }}/release/kubernetes-manifests.yaml"
+  register: _ob_apply
+  changed_when: >
+    ('created' in _ob_apply.stdout) or
+    ('configured' in _ob_apply.stdout) or
+    ('unchanged' not in _ob_apply.stdout)
+
+- name: Get Online Boutique deployments
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ ob_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _ob_deploys
+
+- name: Wait for all Online Boutique deployments to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item.metadata.name }}"
+    namespace: "{{ ob_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _wait_each
+  until: >
+    _wait_each.resources | length > 0 and
+    (_wait_each.resources[0].status.availableReplicas | default(0)) >=
+    (_wait_each.resources[0].spec.replicas | default(1))
+  retries: "{{ ob_wait_retries }}"
+  delay: "{{ ob_wait_delay }}"
+  loop: "{{ _ob_deploys.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Create/Update HPAs (exclude loadgenerator)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ ob_ns }}"
+      spec:
+        minReplicas: "{{ ob_min_replicas }}"
+        maxReplicas: "{{ ob_max_replicas }}"
+        scaleTargetRef:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: "{{ item.metadata.name }}"
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: "{{ ob_cpu_avg_utilization }}"
+  loop: "{{ _ob_deploys.resources | rejectattr('metadata.name','equalto','loadgenerator') | list }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Remove demo LoadBalancer service (frontend-external)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: absent
+    kind: Service
+    api_version: v1
+    name: frontend-external
+    namespace: "{{ ob_ns }}"
+  ignore_errors: true
+
+- name: Create/Update Online Boutique Ingress ({{ ingress_class }}, TLS)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: online-boutique-frontend
+        namespace: "{{ ob_ns }}"
+        annotations:
+          kubernetes.io/tls-acme: "true"
+          cert-manager.io/cluster-issuer: "{{ cert_issuer_name }}"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      spec:
+        ingressClassName: "{{ ingress_class }}"
+        rules:
+          - host: "{{ ob_host }}"
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: frontend
+                      port:
+                        number: 80
+        tls:
+          - hosts: ["{{ ob_host }}"]
+            secretName: "{{ ob_tls_secret }}"
+
+- name: Wait for TLS certificate to be Ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ ob_tls_secret }}"
+    namespace: "{{ ob_ns }}"
+  register: _ob_cert
+  until: >
+    (_ob_cert.resources | length) > 0 and
+    (
+      _ob_cert.resources[0].status.conditions | default([])
+      | selectattr('type','equalto','Ready')
+      | selectattr('status','equalto','True')
+      | list | length
+    ) > 0
+  retries: 40
+  delay: 15

@@ -1,0 +1,12 @@
+---
+- name: Restart haproxy
+  ansible.builtin.service:
+    name: haproxy
+    state: restarted
+  listen: Restart haproxy
+
+- name: Restart iptables
+  ansible.builtin.systemd:
+    name: netfilter-persistent
+    state: restarted
+  listen: Restart iptables

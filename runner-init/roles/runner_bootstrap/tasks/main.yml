@@ -1,0 +1,160 @@
+---
+- name: Install base packages (Debian/Ubuntu)
+  ansible.builtin.apt:
+    update_cache: true
+    name:
+      - git
+      - rsync
+      - tmux
+      - openssh-client
+      - ca-certificates
+      - curl
+      - jq
+      - python3
+      - python3-venv
+      - python3-pip
+      - ansible
+      - build-essential
+      - libffi-dev
+      - libssl-dev
+    state: present
+  when: ansible_facts.os_family == "Debian"
+
+- name: Install base packages (RHEL/Fedora)
+  ansible.builtin.package:
+    name:
+      - git
+      - rsync
+      - tmux
+      - openssh-clients
+      - ca-certificates
+      - curl
+      - jq
+      - python3
+      - python3-pip
+      - ansible
+      - gcc
+      - gcc-c++
+      - make
+      - libffi-devel
+      - openssl-devel
+    state: present
+  when: ansible_facts.os_family in ["RedHat", "Rocky", "AlmaLinux", "Fedora"]
+
+- name: Ensure ~/.ssh exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.ssh"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0700"
+
+- name: Copy SSH private key to runner
+  ansible.builtin.copy:
+    src: "{{ ssh_private_key_src }}"
+    dest: "/home/{{ ansible_user }}/.ssh/{{ ssh_key_dest_basename }}"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+  when: install_ssh_keys | bool and ssh_private_key_src | length > 0
+
+- name: Copy SSH public key to runner
+  ansible.builtin.copy:
+    src: "{{ ssh_public_key_src }}"
+    dest: "/home/{{ ansible_user }}/.ssh/{{ ssh_key_dest_basename }}.pub"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+  when: install_ssh_keys | bool and ssh_public_key_src | length > 0
+
+- name: Ensure Git is ready and repo directory exists
+  ansible.builtin.file:
+    path: "{{ cluster_repo_dest }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Clone your cluster repo
+  ansible.builtin.git:
+    repo: "{{ cluster_repo_url }}"
+    dest: "{{ cluster_repo_dest }}"
+    version: "{{ cluster_repo_version }}"
+    update: true
+  become: false
+
+- name: Clone Kubespray upstream (git)
+  ansible.builtin.git:
+    repo: "{{ kubespray_git_url }}"
+    dest: "{{ kubespray_dest }}"
+    version: "{{ kubespray_version }}"
+    update: true
+  become: false
+
+- name: Ensure Kubespray directory ownership
+  ansible.builtin.file:
+    path: "{{ kubespray_dest }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    recurse: true
+
+- name: Fail if overlay directory is missing
+  ansible.builtin.stat:
+    path: "{{ kubespray_overlay_dir }}/inventory/lab"
+  register: overlay_stat
+  become: false
+
+- name: Stop if overlay is not present
+  ansible.builtin.fail:
+    msg: >
+      Missing overlay at {{ kubespray_overlay_dir }}/inventory/lab.
+      Recommended: put your customized inventory.ini + group_vars under kubespray-overlay/inventory/lab in your repo.
+  when: not overlay_stat.stat.exists
+
+- name: Create kubespray inventory/lab dir
+  ansible.builtin.file:
+    path: "{{ kubespray_dest }}/inventory/lab"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Rsync overlay inventory into Kubespray
+  ansible.builtin.command: >
+    rsync -a --delete
+    {{ kubespray_overlay_dir }}/inventory/lab/
+    {{ kubespray_dest }}/inventory/lab/
+  become: false
+
+- name: Add cluster hosts to known_hosts (best-effort)
+  ansible.builtin.shell: |
+    set -e
+    for h in {{ cluster_hosts | join(' ') }}; do
+      ssh-keyscan -H "$h" 2>/dev/null || true
+    done
+  args:
+    executable: /bin/bash
+  register: keyscan
+  changed_when: false
+  become: false
+
+- name: Write scanned keys into known_hosts (best-effort)
+  ansible.builtin.lineinfile:
+    path: "/home/{{ ansible_user }}/.ssh/known_hosts"
+    create: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+    line: "{{ item }}"
+    state: present
+  loop: "{{ keyscan.stdout_lines | default([]) }}"
+  when: (keyscan.stdout | default('')) | length > 0
+
+- name: Done message
+  ansible.builtin.debug:
+    msg:
+      - "Runner initialized."
+      - "Repo: {{ cluster_repo_dest }}"
+      - "Kubespray: {{ kubespray_dest }}"
+      - "Overlay applied from: {{ kubespray_overlay_dir }}/inventory/lab -> {{ kubespray_dest }}/inventory/lab"

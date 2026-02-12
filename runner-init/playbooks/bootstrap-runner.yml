@@ -1,0 +1,6 @@
+---
+- name: Bootstrap CloudLab runner host
+  hosts: runner
+  become: true
+  roles:
+    - runner_bootstrap

@@ -1,0 +1,157 @@
+---
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: yes
+
+- name: Ensure iptables rules file exists
+  ansible.builtin.file:
+    path: /etc/iptables/rules.v4
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Ensure CHECK_INPUT chain exists and is linked
+  ansible.builtin.shell: |
+    iptables -S CHECK_INPUT >/dev/null 2>&1 || iptables -N CHECK_INPUT
+    iptables -C INPUT -j CHECK_INPUT >/dev/null 2>&1 || iptables -A INPUT -j CHECK_INPUT
+  changed_when: false
+
+- name: Allow HAProxy ports in CHECK_INPUT
+  ansible.builtin.shell: |
+    iptables -C CHECK_INPUT -p tcp -m tcp --dport {{ item }} -j ACCEPT \
+    || iptables -A CHECK_INPUT -p tcp -m tcp --dport {{ item }} -j ACCEPT
+  loop: "{{ lb_open_ports }}"
+
+- name: Persist iptables rules (netfilter-persistent save)
+  ansible.builtin.command: netfilter-persistent save
+  changed_when: true
+  notify: Restart iptables
+
+- name: Ensure cert directories exist
+  ansible.builtin.file:
+    path: /etc/haproxy/certs
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Install certbot
+  ansible.builtin.apt:
+    name: certbot
+    state: present
+    update_cache: yes
+
+- name: Stop haproxy before HTTP-01 challenge
+  ansible.builtin.service:
+    name: haproxy
+    state: stopped
+
+- name: Obtain LE certificate for stats domain (standalone on :80)
+  block:
+    - name: Run certbot (issue once)
+      ansible.builtin.command: >
+        certbot certonly --standalone
+        -d {{ haproxy_stats_domain }}
+        --agree-tos -m {{ haproxy_stats_email }}
+        --non-interactive --preferred-challenges http
+      args:
+        creates: "/etc/letsencrypt/live/{{ haproxy_stats_domain }}/fullchain.pem"
+  always:
+    - name: Start haproxy after challenge
+      ansible.builtin.service:
+        name: haproxy
+        state: started
+
+- name: Remove stale HAProxy PEM (if present)
+  ansible.builtin.file:
+    path: "/etc/haproxy/certs/{{ haproxy_stats_domain }}.pem"
+    state: absent
+
+- name: Build HAProxy PEM bundle from LE cert (fullchain then key)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    umask 077
+    cat /etc/letsencrypt/live/{{ haproxy_stats_domain }}/fullchain.pem \
+        /etc/letsencrypt/live/{{ haproxy_stats_domain }}/privkey.pem \
+      > /etc/haproxy/certs/{{ haproxy_stats_domain }}.pem
+  args:
+    executable: /bin/bash
+  notify: Restart haproxy
+
+- name: Ensure cert ownership and perms for HAProxy
+  ansible.builtin.file:
+    path: "/etc/haproxy/certs/{{ haproxy_stats_domain }}.pem"
+    owner: root
+    group: haproxy
+    mode: '0640'
+
+- name: Check certificate text can be read
+  ansible.builtin.command: >
+    openssl x509 -in /etc/haproxy/certs/{{ haproxy_stats_domain }}.pem -noout -text
+  register: _x509_check
+  changed_when: false
+
+- name: Verify cert and key match (compare public key hashes)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    CERT="/etc/haproxy/certs/{{ haproxy_stats_domain }}.pem"
+    KEY="/etc/letsencrypt/live/{{ haproxy_stats_domain }}/privkey.pem"
+
+    cert_pub_hash=$(
+      openssl x509 -in "$CERT" -pubkey -noout \
+      | openssl pkey -pubin -outform DER 2>/dev/null \
+      | openssl dgst -sha256 | awk '{print $2}'
+    )
+
+    key_pub_hash=$(
+      openssl pkey -in "$KEY" -pubout -outform DER 2>/dev/null \
+      | openssl dgst -sha256 | awk '{print $2}'
+    )
+
+    echo "cert pubkey sha256: $cert_pub_hash"
+    echo "key  pubkey sha256: $key_pub_hash"
+
+    if [ "$cert_pub_hash" = "$key_pub_hash" ]; then
+      echo "OK: certificate and private key match"
+    else
+      echo "ERROR: certificate and private key DO NOT match" >&2
+      exit 1
+    fi
+  args:
+    executable: /bin/bash
+  register: _pubkey_check
+  changed_when: false
+
+- name: Fail fast if PEM looks wrong
+  ansible.builtin.assert:
+    that:
+      - _x509_check.rc == 0
+      - _pubkey_check.rc == 0
+    fail_msg: "PEM/cert mismatch — fix the certificate bundle before applying HAProxy config."
+
+- name: Append HAProxy LB block (managed block)
+  ansible.builtin.blockinfile:
+    path: /etc/haproxy/haproxy.cfg
+    marker: "### {mark} ANSIBLE HAPROXY-LB BLOCK ###"
+    insertafter: EOF
+    block: "{{ lookup('template', 'haproxy_block.j2') }}"
+    validate: 'haproxy -c -f %s'
+  notify: Restart haproxy
+
+- name: Enable HAProxy on boot
+  ansible.builtin.service:
+    name: haproxy
+    enabled: yes
+
+- name: Install certbot renew systemd timer hook (reload haproxy after renew)
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-haproxy.sh
+    mode: '0755'
+    owner: root
+    group: root
+    content: |
+      #!/bin/sh
+      systemctl reload haproxy || systemctl restart haproxy

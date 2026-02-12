@@ -1,0 +1,24 @@
+lb_open_ports:
+  - 6443
+  - 8000
+  - 80
+  - 443
+
+haproxy_stats_port: 8000
+haproxy_stats_user:  "{{ vault_haproxy_stats_user }}"
+haproxy_stats_pass:  "{{ vault_haproxy_stats_pass }}"
+haproxy_stats_domain: "stats.{{ base_domain }}"
+haproxy_stats_email: "younesnikbin@gmail.com"
+
+haproxy_apiserver_port: 6443
+
+haproxy_ingress_http_port: 80
+haproxy_ingress_https_port: 443
+
+ingress_nodeport_http: 30080
+ingress_nodeport_https: 30081
+
+k8s_masters:
+  - { name: "master1", ip: "128.110.218.140" }
+  - { name: "master2", ip: "128.110.218.120" }
+  - { name: "master3", ip: "128.110.218.144" }

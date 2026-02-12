@@ -1,0 +1,54 @@
+listen Stats-Page
+        bind *:{{ haproxy_stats_port }} ssl crt /etc/haproxy/certs/{{ haproxy_stats_domain }}.pem
+        mode http
+        http-request set-header X-Forwarded-Proto https if { ssl_fc }
+        http-request redirect scheme https unless { ssl_fc }
+        stats enable
+        stats hide-version
+        stats refresh 10s
+        stats uri /
+        stats show-legends
+        stats show-node
+        stats admin if LOCALHOST
+        stats auth {{ haproxy_stats_user }}:{{ haproxy_stats_pass }}
+
+frontend fe-apiserver
+        bind 0.0.0.0:{{ haproxy_apiserver_port }}
+        mode tcp
+        option tcplog
+        default_backend be-apiserver
+
+backend be-apiserver
+        mode tcp
+        option tcp-check
+        balance roundrobin
+        default-server inter 10s downinter 5s rise 2 fall 2 slowstart 60s maxconn 250 maxqueue 256 weight 100
+{% for m in k8s_masters %}
+        server {{ m.name }} {{ m.ip }}:{{ haproxy_apiserver_port }} check
+{% endfor %}
+
+frontend fe-http
+        bind 0.0.0.0:{{ haproxy_ingress_http_port }}
+        mode tcp
+        option tcplog
+        default_backend be-ingress-http
+
+backend be-ingress-http
+        mode tcp
+        balance roundrobin
+{% for m in k8s_masters %}
+        server {{ m.name }} {{ m.ip }}:{{ ingress_nodeport_http }} check
+{% endfor %}
+
+frontend fe-https
+        bind 0.0.0.0:{{ haproxy_ingress_https_port }}
+        mode tcp
+        option tcplog
+        default_backend be-ingress-https
+
+backend be-ingress-https
+        mode tcp
+        balance roundrobin
+{% for m in k8s_masters %}
+        server {{ m.name }} {{ m.ip }}:{{ ingress_nodeport_https }} check
+{% endfor %}

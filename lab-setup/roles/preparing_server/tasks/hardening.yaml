@@ -1,0 +1,72 @@
+---
+- name: Stop and Disable ufw service if started
+  ansible.builtin.service:
+    name: ufw
+    state: stopped
+    enabled: no
+
+- name: Stop and Disable postfix service if started
+  ansible.builtin.service:
+    name: postfix
+    state: stopped
+    enabled: no
+  ignore_errors: true
+
+- name: Make timout configuration file.
+  template:
+    src: timout.j2
+    dest: /etc/profile.d/timout-settings.sh
+
+- name: Set timezone to Asia/Tehran
+  community.general.timezone:
+    name: Asia/Tehran
+  notify: Restart ntp
+
+- name: Copy ssh banner for SSH
+  copy:
+    src: ssh_banner
+    dest: /etc/issue.net
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart ssh
+
+- name: Copy console login banner
+  copy:
+    src: ssh_banner
+    dest: /etc/issue
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Make sshd configuration file.
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'
+  notify: Restart ssh
+
+- name: Validate sshd configuration
+  command: sshd -t
+  changed_when: false
+  notify: Restart ssh
+
+- name: Make iptables configuration file.
+  template:
+    src: iptables.j2
+    dest: /etc/iptables/rules.v4
+
+- name: restore iptables state from a file
+  community.general.iptables_state:
+    state: restored
+    path: /etc/iptables/rules.v4
+    noflush: true
+  notify: Restart iptables
+
+- name: Make fail2ban configuration file.
+  template:
+    src: fial2ban.j2
+    dest: /etc/fail2ban/jail.local
+  notify: Restart fail2ban

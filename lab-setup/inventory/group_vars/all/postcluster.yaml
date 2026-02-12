@@ -1,0 +1,45 @@
+kubeconfig_path: /etc/kubernetes/admin.conf
+ingress_class: "nginx"
+storage_class: "local-path"
+
+cert_issuer_name: "letsencrypt-http01"
+acme_server_url: "https://acme-v02.api.letsencrypt.org/directory"
+acme_email: "younesnikbin@gmail.com"
+acme_private_key_secret: "le-account-key"
+
+monitoring_ns: "monitoring"
+prom_release_label: "prometheus-stack"
+prom_repo_name: "prometheus-community"
+prom_repo_url: "https://prometheus-community.github.io/helm-charts"
+grafana_host: "grafana.{{ base_domain }}"
+grafana_timezone: "Asia/Tehran"
+grafana_admin_password: "{{ vault_grafana_admin_password }}"
+grafana_pvc_size: "10Gi"
+prometheus_host: "prometheus.{{ base_domain }}"
+prometheus_retention: "15d"
+prometheus_pvc_size: "20Gi"
+prom_basic_user: "{{ vault_prom_basic_user }}"
+prom_basic_pass: "{{ vault_prom_basic_pass }}"
+
+istio_ns: "istio-system"
+istio_repo_name: "istio"
+istio_repo_url: "https://istio-release.storage.googleapis.com/charts"
+istio_git_repo: "https://github.com/istio/istio.git"
+istio_git_branch: "release-1.28"
+istio_version: "1.28.0"
+istio_dash_tmp: "/tmp/istio-{{ istio_git_branch }}"
+istio_dashboards_rel_path: "manifests/addons/dashboards"
+istio_grafana_folder: "Istio"
+
+ob_ns: "online-boutique"
+ob_repo_url: "https://github.com/GoogleCloudPlatform/microservices-demo.git"
+ob_repo_version: "v0"
+ob_clone_dir: "/tmp/microservices-demo"
+ob_enable_istio_injection: true
+ob_min_replicas: 1
+ob_max_replicas: 10
+ob_cpu_avg_utilization: 60
+ob_host: "online-boutique.{{ base_domain }}"
+ob_tls_secret: "online-boutique-general-tls"
+ob_wait_retries: 60
+ob_wait_delay: 5
