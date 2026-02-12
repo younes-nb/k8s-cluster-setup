@@ -58,12 +58,23 @@
     src: iptables.j2
     dest: /etc/iptables/rules.v4
 
-- name: restore iptables state from a file
-  community.general.iptables_state:
-    state: restored
-    path: /etc/iptables/rules.v4
-    noflush: true
-  notify: Restart iptables
+- name: Restore iptables rules (async)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    iptables-restore --noflush < /etc/iptables/rules.v4
+  args:
+    executable: /bin/bash
+  async: 45
+  poll: 0
+  register: ipt_job
+
+- name: Wait for iptables restore
+  ansible.builtin.async_status:
+    jid: "{{ ipt_job.ansible_job_id }}"
+  register: ipt_status
+  until: ipt_status.finished
+  retries: 15
+  delay: 1
 
 - name: Make fail2ban configuration file.
   template:

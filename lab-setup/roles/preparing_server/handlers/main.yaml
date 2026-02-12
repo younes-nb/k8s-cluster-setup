@@ -4,9 +4,10 @@
     state: restarted
 
 - name: Restart iptables
-  systemd:
-    name: iptables
+  ansible.builtin.systemd:
+    name: netfilter-persistent
     state: restarted
+  ignore_errors: true
 
 - name: Restart fail2ban
   systemd:
