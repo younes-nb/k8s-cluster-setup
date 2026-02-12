@@ -96,6 +96,25 @@ step_banner "Generating dynamic cluster IP variables"
 ansible-playbook -i localhost, -c local tools/generate-cluster-ips.yml
 ok "Generated dynamic IP variables"
 
+# ---------- collections / deps (lab-setup) ----------
+if [[ -f "${LAB_DIR}/collections/requirements.yml" ]]; then
+  step_banner "Ensuring Ansible collections are installed (lab-setup)"
+  export ANSIBLE_COLLECTIONS_PATHS="$(pwd)/.ansible/collections:${ANSIBLE_COLLECTIONS_PATHS:-$HOME/.ansible/collections:/usr/share/ansible/collections}"
+  mkdir -p "$(pwd)/.ansible/collections"
+
+  info "ansible-galaxy collection install -r ${LAB_DIR}/collections/requirements.yml"
+  ansible-galaxy collection install -r "${LAB_DIR}/collections/requirements.yml" -p "$(pwd)/.ansible/collections" >/dev/null
+  ok "Collections installed/updated"
+else
+  info "No ${LAB_DIR}/collections/requirements.yml found; skipping collection install"
+fi
+
+if [[ -f "${LAB_DIR}/requirements.txt" ]]; then
+  step_banner "Ensuring Python deps are installed (lab-setup)"
+  python3 -m pip install --user -r "${LAB_DIR}/requirements.txt" >/dev/null
+  ok "Python deps installed"
+fi
+
 # ---------- 1) Preparing play ----------
 if should_run preparing; then
   step_banner "Running preparing playbook (lab-setup)"

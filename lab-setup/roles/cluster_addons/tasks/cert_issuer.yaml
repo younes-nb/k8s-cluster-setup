@@ -1,20 +1,21 @@
 ---
-- name: Apply ClusterIssuer (Let’s Encrypt HTTP-01)
+- name: Apply ClusterIssuer
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ kubeconfig_path }}"
-    definition: |
+    definition:
       apiVersion: cert-manager.io/v1
       kind: ClusterIssuer
       metadata:
-        name: {{ cert_issuer_name }}
+        name: "{{ cert_issuer_name }}"
       spec:
         acme:
-          server: {{ acme_server_url }}
-          email: {{ acme_email }}
+          server: "{{ acme_server_url }}"
+          email: "{{ acme_email }}"
           privateKeySecretRef:
-            name: {{ acme_private_key_secret }}
+            name: "{{ acme_private_key_secret }}"
           solvers:
             - http01:
                 ingress:
-                  class: {{ ingress_class }}
+                  class: "{{ ingress_class }}"
+
