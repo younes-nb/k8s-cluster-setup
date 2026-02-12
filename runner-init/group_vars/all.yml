@@ -1,8 +1,8 @@
 ---
 cluster_repo_dest: "/home/{{ ansible_user }}/cluster-repo"
 
-cluster_repo_url: "GIT_URL_OF_YOUR_REPO"
-cluster_repo_version: "main"
+cluster_repo_url: "https://github.com/younes-nb/k8s-cluster-setup.git"
+cluster_repo_version: "master"
 
 kubespray_git_url: "https://github.com/kubernetes-sigs/kubespray.git"
 kubespray_version: "v2.30.0"
