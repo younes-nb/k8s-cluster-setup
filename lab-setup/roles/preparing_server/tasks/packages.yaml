@@ -1,14 +1,51 @@
 ---
+- name: Wait for apt/dpkg locks to be released (Ubuntu/Debian)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    locks=(
+      /var/lib/dpkg/lock
+      /var/lib/dpkg/lock-frontend
+      /var/lib/apt/lists/lock
+      /var/cache/apt/archives/lock
+    )
+
+    end=$((SECONDS+600))
+    while true; do
+      busy=0
+      for l in "${locks[@]}"; do
+        if fuser "$l" >/dev/null 2>&1; then
+          busy=1
+        fi
+      done
+
+      if [ "$busy" -eq 0 ]; then
+        exit 0
+      fi
+
+      if [ "$SECONDS" -ge "$end" ]; then
+        echo "Timed out waiting for apt locks"
+        for l in "${locks[@]}"; do fuser -v "$l" || true; done
+        exit 1
+      fi
+
+      sleep 5
+    done
+  args:
+    executable: /bin/bash
+  changed_when: false
+  become: true
+  when: ansible_facts.os_family == "Debian"
+
 - name: Update and upgrade apt packages
   ansible.builtin.apt:
     upgrade: yes
     update_cache: yes
     cache_valid_time: 86400
-    lock_timeout: 600
-  register: _apt_upgrade
+  register: apt_upgrade
   retries: 10
   delay: 15
-  until: _apt_upgrade is succeeded
+  until: apt_upgrade is succeeded
+  when: ansible_facts.os_family == "Debian"
 
 - name: Install basic tools
   ansible.builtin.apt:
@@ -16,11 +53,11 @@
     state: present
     force_apt_get: yes
     update_cache: yes
-    lock_timeout: 600
-  register: _apt_install
+  register: apt_install
   retries: 10
   delay: 15
-  until: _apt_install is succeeded
+  until: apt_install is succeeded
+  when: ansible_facts.os_family == "Debian"
 
 - name: Set hostname
   hostname:
