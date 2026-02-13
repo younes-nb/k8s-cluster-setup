@@ -1,12 +1,12 @@
 StrictHostKeyChecking no
 
 Host *.cloudlab.us
-    User {{ cloudlab_user | default('younes02') }}
-    IdentityFile {{ ssh_identity_file | default('/home/' ~ ansible_user ~ '/.ssh/id_ed25519') }}
+    User {{ cloudlab_user }}
+    IdentityFile {{ ssh_identity_file | default(runner_home ~ '/.ssh/id_ed25519') }}
     IdentitiesOnly yes
 
 {% for alias, fqdn in (cloudlab_hosts | default({})).items() %}
 Host {{ alias }}
     Hostname {{ fqdn }}
-    User {{ cloudlab_user | default('younes02') }}
+    User {{ cloudlab_user }}
 {% endfor %}
