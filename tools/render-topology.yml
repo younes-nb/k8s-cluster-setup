@@ -2,25 +2,39 @@
 - hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-    - name: Load .env into vars
-      ansible.builtin.slurp:
-        src: ../.env
-      register: envfile
+    - name: Parse ../.env into JSON using python3
+      ansible.builtin.command: >
+        python3 -c "
+        import json, re
+        p='../.env'
+        d={}
+        with open(p,'r',encoding='utf-8') as f:
+          for line in f:
+            line=line.strip()
+            if not line or line.startswith('#'):
+              continue
+            if line.startswith('export '):
+              line=line[7:].strip()
+            if '=' not in line:
+              continue
+            k,v=line.split('=',1)
+            k=k.strip()
+            v=v.strip()
+            if (len(v)>=2 and ((v[0]==v[-1]) and v[0] in ('\"','\\''))):
+              v=v[1:-1]
+            d[k]=v
+        print(json.dumps(d))
+        "
+      register: _env_json
+      changed_when: false
 
-    - name: Parse .env into env_vars dict
+    - name: Set env_vars fact
       ansible.builtin.set_fact:
-        env_vars: >-
-          {{
-            dict(
-              (envfile.content | b64decode).splitlines()
-              | reject('match','^\\s*$')
-              | reject('match','^\\s*#')
-              | map('regex_replace','\\s*=\\s*','=')
-              | map('regex_split', '=', 1)
-            )
-          }}
+        env_vars: "{{ _env_json.stdout | from_json }}"
 
     - name: Render cluster-topology.yml from template
       ansible.builtin.template:
