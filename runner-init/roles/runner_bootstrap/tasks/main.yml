@@ -42,7 +42,7 @@
   when: ansible_facts.os_family in ["RedHat", "Rocky", "AlmaLinux", "Fedora"]
 
 - name: Get home directory for ansible_user
-  ansible.builtin.command: "getent passwd {{ ansible_user }}"
+  ansible.builtin.command: "getent passwd {{ runner_user }}"
   register: _passwd
   changed_when: false
 
@@ -51,7 +51,7 @@
     runner_home: "{{ _passwd.stdout.split(':')[5] }}"
 
 - name: Get primary group for ansible_user
-  ansible.builtin.command: "id -gn {{ ansible_user }}"
+  ansible.builtin.command: "id -gn {{ runner_user }}"
   register: _primary_group
   changed_when: false
 
@@ -63,7 +63,7 @@
   ansible.builtin.file:
     path: "{{ runner_home }}/.ssh"
     state: directory
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0700"
 
@@ -71,7 +71,7 @@
   ansible.builtin.copy:
     src: "{{ ssh_private_key_src }}"
     dest: "{{ ssh_identity_file }}"
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0600"
   when: (install_ssh_keys | default(false)) | bool
@@ -80,7 +80,7 @@
   ansible.builtin.copy:
     src: "{{ ssh_public_key_src }}"
     dest: "{{ ssh_identity_file }}.pub"
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0644"
   when: (install_ssh_keys | default(false)) | bool
@@ -101,7 +101,7 @@
 - name: Ensure correct permissions on SSH private key
   ansible.builtin.file:
     path: "{{ ssh_identity_file }}"
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0600"
 
@@ -109,7 +109,7 @@
   ansible.builtin.template:
     src: "ssh_config.j2"
     dest: "{{ runner_home }}/.ssh/config"
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0600"
 
@@ -139,7 +139,7 @@
   ansible.builtin.file:
     path: "{{ cluster_repo_dest }}"
     state: directory
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0755"
 
@@ -163,7 +163,7 @@
   ansible.builtin.file:
     path: "{{ kubespray_dest }}"
     state: directory
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     recurse: true
 
@@ -184,7 +184,7 @@
   ansible.builtin.file:
     path: "{{ kubespray_dest }}/inventory/lab"
     state: directory
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0755"
 
@@ -211,7 +211,7 @@
   ansible.builtin.lineinfile:
     path: "{{ runner_home }}/.ssh/known_hosts"
     create: true
-    owner: "{{ ansible_user }}"
+    owner: "{{ runner_user }}"
     group: "{{ runner_user_group }}"
     mode: "0644"
     line: "{{ item }}"

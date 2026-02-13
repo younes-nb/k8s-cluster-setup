@@ -2,7 +2,8 @@
 - name: Bootstrap CloudLab runner host
   hosts: runner_hosts
   become: true
-  vars_files:
-    - ../group_vars/all.yml
+  gather_facts: true
+  vars:
+    runner_user: "{{ ansible_user | default(ansible_user_id) }}"
   roles:
     - runner_bootstrap
