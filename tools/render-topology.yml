@@ -6,29 +6,35 @@
     ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-    - name: Parse ../.env into JSON using python3
-      ansible.builtin.command: >
-        python3 -c "
-        import json, re
-        p='../.env'
-        d={}
-        with open(p,'r',encoding='utf-8') as f:
-          for line in f:
-            line=line.strip()
-            if not line or line.startswith('#'):
-              continue
-            if line.startswith('export '):
-              line=line[7:].strip()
-            if '=' not in line:
-              continue
-            k,v=line.split('=',1)
-            k=k.strip()
-            v=v.strip()
-            if (len(v)>=2 and ((v[0]==v[-1]) and v[0] in ('\"','\\''))):
-              v=v[1:-1]
-            d[k]=v
+    - name: Parse ../.env into JSON using python3 (heredoc)
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import json
+
+        p = "../.env"
+        d = {}
+
+        with open(p, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:].strip()
+                if "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip()
+                # strip surrounding quotes
+                if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                    v = v[1:-1]
+                d[k] = v
+
         print(json.dumps(d))
-        "
+        PY
+      args:
+        executable: /bin/bash
       register: _env_json
       changed_when: false
 
