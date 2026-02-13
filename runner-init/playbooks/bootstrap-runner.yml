@@ -3,7 +3,14 @@
   hosts: runner_hosts
   become: true
   gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/cloudlab.local.yml
+
   vars:
     runner_user: "{{ ansible_user | default(ansible_user_id) }}"
+    runner_home: "{{ ansible_env.HOME }}"
+
   roles:
     - runner_bootstrap

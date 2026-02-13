@@ -1,28 +1,15 @@
----
-cluster_repo_dest: "/home/{{ ansible_user }}/cluster-repo"
-
-cluster_repo_url: "https://github.com/younes-nb/k8s-cluster-setup.git"
-cluster_repo_version: "master"
-
-kubespray_git_url: "https://github.com/kubernetes-sigs/kubespray.git"
-kubespray_version: "v2.30.0"
+cluster_repo_dest: "{{ runner_home }}/cluster-repo"
 kubespray_dest: "{{ cluster_repo_dest }}/kubespray"
-
 kubespray_overlay_dir: "{{ cluster_repo_dest }}/kubespray-overlay"
 
-cloudlab_user: "younes02"
 ssh_key_dest_basename: "id_ed25519"
 ssh_identity_file: "{{ runner_home }}/.ssh/{{ ssh_key_dest_basename }}"
 
 install_ssh_keys: true
-ssh_private_key_src: "~/.ssh/id_ed25519"
-ssh_public_key_src: "~/.ssh/id_ed25519.pub"
+ssh_private_key_src: "{{ lookup('env','HOME') }}/.ssh/id_ed25519"
+ssh_public_key_src: "{{ lookup('env','HOME') }}/.ssh/id_ed25519.pub"
 
-cloudlab_hosts:
-  lb: "hp006.utah.cloudlab.us"
-  master1: "hp005.utah.cloudlab.us"
-  master2: "hp009.utah.cloudlab.us"
-  master3: "hp019.utah.cloudlab.us"
-  worker1: "hp007.utah.cloudlab.us"
-  worker2: "hp004.utah.cloudlab.us"
-  worker3: "hp033.utah.cloudlab.us"
+kubespray_git_url: "https://github.com/kubernetes-sigs/kubespray.git"
+kubespray_version: "v2.30.0"
+cluster_repo_url: "https://github.com/younes-nb/k8s-cluster-setup.git"
+cluster_repo_version: "master"
