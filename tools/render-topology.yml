@@ -9,7 +9,7 @@
         src: ../.env
       register: envfile
 
-    - name: Parse .env
+    - name: Parse .env into env_vars dict
       ansible.builtin.set_fact:
         env_vars: >-
           {{
@@ -27,5 +27,3 @@
         src: ../cluster-topology.yml.j2
         dest: ../cluster-topology.yml
         mode: "0644"
-      vars:
-        "{{ env_vars }}"

@@ -1,11 +1,11 @@
 cloudlab_hosts:
-  lb: {{ LB }}.{{ CLOUDLAB_DOMAIN }}
-  master1: {{ MASTER1 }}.{{ CLOUDLAB_DOMAIN }}
-  master2: {{ MASTER2 }}.{{ CLOUDLAB_DOMAIN }}
-  master3: {{ MASTER3 }}.{{ CLOUDLAB_DOMAIN }}
-  worker1: {{ WORKER1 }}.{{ CLOUDLAB_DOMAIN }}
-  worker2: {{ WORKER2 }}.{{ CLOUDLAB_DOMAIN }}
-  worker3: {{ WORKER3 }}.{{ CLOUDLAB_DOMAIN }}
+  lb: {{ env_vars.LB }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+  master1: {{ env_vars.MASTER1 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+  master2: {{ env_vars.MASTER2 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+  master3: {{ env_vars.MASTER3 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+  worker1: {{ env_vars.WORKER1 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+  worker2: {{ env_vars.WORKER2 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+  worker3: {{ env_vars.WORKER3 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
 
 kube_control_plane_hosts: [master1, master2, master3]
 kube_worker_hosts: [worker1, worker2, worker3]
