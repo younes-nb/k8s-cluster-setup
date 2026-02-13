@@ -27,4 +27,5 @@
         src: ../cluster-topology.yml.j2
         dest: ../cluster-topology.yml
         mode: "0644"
-      vars: "{{ env_vars }}"
+      vars:
+        "{{ env_vars }}"
