@@ -17,7 +17,9 @@ KS_DIR_ABS="$(cd "$KUBESPRAY_DIR" && pwd)"
 KS_VENV="${KS_DIR_ABS}/.venv"
 KS_REQUIREMENTS="${KS_DIR_ABS}/requirements.txt"
 
+GET_KUBECONFIG="./get-kubeconfig.sh"
 KUBECONFIG_DEST="admin.conf"
+KUBECONFIG_HOST="master1"
 
 ANSIBLE_VAULT_FLAG=${ANSIBLE_VAULT_PASSWORD_FILE:+--vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"}
 
@@ -84,6 +86,7 @@ need_cmd python3
 need_cmd bash
 
 [[ -d "$LAB_DIR" && -d "$KUBESPRAY_DIR" ]] || { err "Run from repo root. Missing $LAB_DIR/ or $KUBESPRAY_DIR/"; exit 1; }
+[[ -f "$GET_KUBECONFIG" ]] || { err "Missing $GET_KUBECONFIG in repo root"; exit 1; }
 
 export ANSIBLE_SSH_CONTROL_PATH_DIR=/tmp/ansible-cp
 mkdir -p /tmp/ansible-cp
