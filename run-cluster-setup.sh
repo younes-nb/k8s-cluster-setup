@@ -17,9 +17,7 @@ KS_DIR_ABS="$(cd "$KUBESPRAY_DIR" && pwd)"
 KS_VENV="${KS_DIR_ABS}/.venv"
 KS_REQUIREMENTS="${KS_DIR_ABS}/requirements.txt"
 
-GET_KUBECONFIG="./get-kubeconfig.sh"
 KUBECONFIG_DEST="admin.conf"
-KUBECONFIG_HOST="master1"
 
 ANSIBLE_VAULT_FLAG=${ANSIBLE_VAULT_PASSWORD_FILE:+--vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"}
 
@@ -177,9 +175,22 @@ fi
 
 # ---------- 5) Fetch kubeconfig ----------
 if should_run kubeconfig; then
-  step_banner "Fetching kubeconfig to ./${KUBECONFIG_DEST}"
-  source "$GET_KUBECONFIG" "$KUBECONFIG_HOST" "$KUBECONFIG_DEST"
+  step_banner "Fetching kubeconfig from Kubespray artifacts -> ./${KUBECONFIG_DEST}"
+
+  ARTIFACT_KUBECONFIG="$(find "${KS_DIR_ABS}/inventory" -path "*/artifacts/admin.conf" -print -quit)"
+
+  if [[ ! -s "$ARTIFACT_KUBECONFIG" ]]; then
+    err "Kubespray kubeconfig artifact not found or empty: $ARTIFACT_KUBECONFIG"
+    err "Make sure kubeconfig_localhost: true and Kubespray completed successfully."
+    exit 1
+  fi
+
+  cp -f "$ARTIFACT_KUBECONFIG" "$KUBECONFIG_DEST"
+  chmod 600 "$KUBECONFIG_DEST"
+
+  export KUBECONFIG="$PWD/$KUBECONFIG_DEST"
   ok "Kubeconfig written to $(realpath "$KUBECONFIG_DEST")"
+  info "Tip: export KUBECONFIG=$KUBECONFIG"
 else
   info "Skipping step: kubeconfig"
 fi
