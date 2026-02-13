@@ -1,16 +1,26 @@
 ---
 - name: Update and upgrade apt packages
-  apt:
-    upgrade: true
-    update_cache: true
+  ansible.builtin.apt:
+    upgrade: yes
+    update_cache: yes
     cache_valid_time: 86400
+    lock_timeout: 600
+  register: _apt_upgrade
+  retries: 10
+  delay: 15
+  until: _apt_upgrade is succeeded
 
 - name: Install basic tools
-  apt:
+  ansible.builtin.apt:
     name: "{{ packages }}"
     state: present
-    force_apt_get: true
-    update_cache: true
+    force_apt_get: yes
+    update_cache: yes
+    lock_timeout: 600
+  register: _apt_install
+  retries: 10
+  delay: 15
+  until: _apt_install is succeeded
 
 - name: Set hostname
   hostname:
