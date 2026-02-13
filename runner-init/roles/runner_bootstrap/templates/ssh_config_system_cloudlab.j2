@@ -1,5 +1,5 @@
 Host *.cloudlab.us
-    User {{ cloudlab_user | default('younes02') }}
+    User {{ cloudlab_user }}
     IdentityFile ~/.ssh/id_ed25519
     IdentitiesOnly yes
     StrictHostKeyChecking no
@@ -7,5 +7,5 @@ Host *.cloudlab.us
 {% for alias, fqdn in (cloudlab_hosts | default({})).items() %}
 Host {{ alias }}
     HostName {{ fqdn }}
-    User {{ cloudlab_user | default('younes02') }}
+    User {{ cloudlab_user }}
 {% endfor %}
