@@ -90,6 +90,10 @@ export ANSIBLE_SSH_CONTROL_PATH_DIR=/tmp/ansible-cp
 mkdir -p /tmp/ansible-cp
 chmod 700 /tmp/ansible-cp
 
+step_banner "Rendering cluster-topology.yml from .env"
+ansible-playbook -i localhost, -c local tools/render-topology.yml
+ok "Rendered cluster-topology.yml"
+
 step_banner "Generating dynamic cluster IP variables"
 ansible-playbook -i localhost, -c local tools/generate-cluster-ips.yml
 ok "Generated dynamic IP variables"

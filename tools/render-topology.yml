@@ -1,0 +1,30 @@
+---
+- hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Load .env into vars
+      ansible.builtin.slurp:
+        src: ../.env
+      register: envfile
+
+    - name: Parse .env
+      ansible.builtin.set_fact:
+        env_vars: >-
+          {{
+            dict(
+              (envfile.content | b64decode).splitlines()
+              | reject('match','^\\s*$')
+              | reject('match','^\\s*#')
+              | map('regex_replace','\\s*=\\s*','=')
+              | map('split','=',1)
+            )
+          }}
+
+    - name: Render cluster-topology.yml from template
+      ansible.builtin.template:
+        src: ../cluster-topology.yml.j2
+        dest: ../cluster-topology.yml
+        mode: "0644"
+      vars: "{{ env_vars }}"
