@@ -188,4 +188,24 @@ else
   info "Skipping step: kubeconfig"
 fi
 
+# ---------- 6) Copy kubectl from master1 to runner node ----------
+if should_run kubectl; then
+  step_banner "Copying kubectl from master1 to runner"
+  
+  mkdir -p ~/.local/bin
+  
+  scp master1:/usr/local/bin/kubectl ~/.local/bin/kubectl
+  
+  chmod +x ~/.local/bin/kubectl
+  
+  grep -q 'export PATH=$HOME/.local/bin:$PATH' ~/.bashrc || echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+  
+  source ~/.bashrc
+
+  kubectl version --client
+  ok "kubectl copied and available"
+else
+  info "Skipping step: kubectl"
+fi
+
 echo -e "\n\033[1;32mAll selected steps completed successfully!\033[0m"
