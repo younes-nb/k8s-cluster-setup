@@ -5,7 +5,8 @@
 #  2) lab-setup/haproxy-lb.yaml         (name: haproxy)
 #  3) kubespray cluster.yml (with venv) (name: kubespray)
 #  4) lab-setup/postcluster.yaml        (name: postcluster)
-#  5) get kubeconfig into ./admin.conf  (name: kubeconfig)
+#  5) copy kubectl from master1 to runner (name: kubectl)
+#  6) get kubeconfig into ./admin.conf    (name: kubeconfig)
 
 set -Eeuo pipefail
 
@@ -179,15 +180,6 @@ else
   info "Skipping step: postcluster"
 fi
 
-# ---------- 5) Fetch kubeconfig ----------
-if should_run kubeconfig; then
-  step_banner "Fetching kubeconfig to ./${KUBECONFIG_DEST}"
-  source "$GET_KUBECONFIG" "$KUBECONFIG_HOST" "$KUBECONFIG_DEST"
-  ok "Kubeconfig written to $(realpath "$KUBECONFIG_DEST")"
-else
-  info "Skipping step: kubeconfig"
-fi
-
 # ---------- 6) Copy kubectl from master1 to runner node ----------
 if should_run kubectl; then
   step_banner "Copying kubectl from master1 to runner"
@@ -206,6 +198,15 @@ if should_run kubectl; then
   ok "kubectl copied and available"
 else
   info "Skipping step: kubectl"
+fi
+
+# ---------- 5) Fetch kubeconfig ----------
+if should_run kubeconfig; then
+  step_banner "Fetching kubeconfig to ./${KUBECONFIG_DEST}"
+  source "$GET_KUBECONFIG" "$KUBECONFIG_HOST" "$KUBECONFIG_DEST"
+  ok "Kubeconfig written to $(realpath "$KUBECONFIG_DEST")"
+else
+  info "Skipping step: kubeconfig"
 fi
 
 echo -e "\n\033[1;32mAll selected steps completed successfully!\033[0m"

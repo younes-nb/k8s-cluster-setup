@@ -7,3 +7,5 @@ kubespray-overlay/inventory/lab/group_vars/all/cluster_ips.yml
 cluster-topology.yml
 runner-init/group_vars/cloudlab.local.yml
 kubespray-overlay/inventory/lab/artifacts/admin.conf
+.ansible/
+/admin.conf
