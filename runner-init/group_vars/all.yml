@@ -1,3 +1,5 @@
+runner_user: younes02
+
 cluster_repo_dest: "{{ runner_home }}/cluster-repo"
 kubespray_dest: "{{ cluster_repo_dest }}/kubespray"
 kubespray_overlay_dir: "{{ cluster_repo_dest }}/kubespray-overlay"

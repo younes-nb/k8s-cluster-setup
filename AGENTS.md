@@ -1,36 +1,59 @@
-# AGENTS.md
+# AGENTS.md — k8s-cluster-setup
 
-Ansible + Kubespray repo that deploys an HA Kubernetes cluster (3 control-plane, 3 worker nodes, stacked etcd) on CloudLab hosts behind an HAProxy LB. No tests, no CI, no linters — "verification" means running an Ansible playbook.
+## Quickstart
 
-## Entry point: `./run-cluster-setup.sh`
+From repo root, run all steps:
 
-The end-to-end orchestrator (run from repo root, requires `ansible-playbook`, `python3`, `bash`). It runs local rendering steps first, then phases in this fixed order:
+```
+./run-cluster-setup.sh
+```
 
-1. `tools/render-topology.yml` — renders `cluster-topology.yml` from `.env` (template `cluster-topology.yml.j2`).
-2. `tools/generate-cluster-ips.yml` — resolves node FQDNs to IPv4 via `getent ahostsv4` and writes a generated `cluster_ips.yml` into BOTH `lab-setup/inventory/group_vars/all/` and `kubespray-overlay/inventory/lab/group_vars/all/`.
-3. Phases: `preparing` → `haproxy` → `kubespray` → `postcluster` → `kubeconfig`.
+Or start at a specific step:
 
-Resume at any phase: `./run-cluster-setup.sh --start-from=kubespray` (or a bare step name). The script also contains an undocumented `kubectl` step (step 6, copies kubectl off `master1`) — it runs on a full run but is not in `usage()` and can't be used as a start point.
+```
+./run-cluster-setup.sh <step>
+# steps: preparing | haproxy | kubespray | postcluster | kubeconfig
+```
 
-## Prerequisites not stored in the repo
+## Directory layout
 
-- Copy `.env.example` → `.env` and fill in `CLOUDLAB_DOMAIN` and the `LB`/`MASTER1-3`/`WORKER1-3` hostname prefixes; node FQDNs are `<prefix>.<CLOUDLAB_DOMAIN>`. `.env`, `cluster-topology.yml`, and both `cluster_ips.yml` are generated + gitignored — never commit them.
-- Node FQDNs must be DNS-resolvable from the host running the script (step 2 fails otherwise).
-- `lab-setup/ansible.cfg` wires the vault password automatically to `lab-setup/.vault.pass` (a committed plaintext placeholder, works for the encrypted `vault.yaml`). `run-cluster-setup.sh` only adds `--vault-password-file` if `ANSIBLE_VAULT_PASSWORD_FILE` is set — set that to override.
+- `lab-setup/` — Ansible playbooks/roles for node prep, HAProxy LB, post-cluster addons
+- `kubespray-overlay/` — Kubespray inventory and group vars (the actual kubespray dir is at `lab-setup/../kubespray`, but the overlay vars are applied on top)
+- `runner-init/` — Runner host bootstrap (SSH keys, etc.)
+- `tools/` — Helper scripts: `render-topology.yml`, `generate-cluster-ips.yml`
+- `get-kubeconfig.sh` — Fetch kubeconfig from a master node
+- `.env` — Must be populated (copy from `.env.example`)
 
-## `kubespray/` is not source
+## Environment
 
-`kubespray/` is gitignored: upstream Kubespray cloned at pinned `v2.30.0` (see `runner-init/group_vars/all.yml`) and synced with an overlay. All custom cluster config lives in `kubespray-overlay/inventory/lab/` (`inventory.ini` + `group_vars/...`), including generated `cluster_ips.yml`. The kubespray phase activates a venv at `kubespray/.venv` and runs `cluster.yml -b` with `-i ../kubespray-overlay/inventory/lab/inventory.ini`. Don't edit `kubespray/` directly — changes won't be committed; edit the overlay instead.
+- Copy `.env.example` to `.env` and set `CLOUDLAB_DOMAIN=emulab.net` (or your domain).
+- The `run-cluster-setup.sh` script **must be run from the repo root** (it checks for `lab-setup/` and `kubespray/`).
+- `python3`, `ansible-playbook`, and `bash` must be available on PATH.
+- A Python venv is created at `kubespray/.venv` on first `kubespray` run; it installs deps from `kubespray/requirements.txt`.
 
-## Commands
+## Workflow steps (in order)
 
-- Full run: `./run-cluster-setup.sh`
-- lab-setup plays (each has its own inventory; run with `-b` from `lab-setup/`): `ansible-playbook -i inventory/host.yaml playbook/{preparing,haproxy-lb,postcluster}.yaml -b`. Hosts: `preparing`→all nodes, `haproxy-lb`→`lb`, `postcluster`→`master1`.
-- Kubespray: `source kubespray/.venv/bin/activate && ansible-playbook -i kubespray-overlay/inventory/lab/inventory.ini cluster.yml -b`
-- `get-kubeconfig.sh` must be **sourced**, not executed (it exports `KUBECONFIG`, sets `alias k`, refuses to run standalone). Requires a local `kubectl`; fetches `/etc/kubernetes/admin.conf` from `master1` via ssh.
-- Runner bootstrap (provisions the CloudLab runner that runs the pipeline): `cd runner-init && ansible-playbook -i inventory/runner.ini playbooks/bootstrap-runner.yml`. It needs the gitignored `runner-init/group_vars/cloudlab.local.yml` (defines `cloudlab_user`, `cloudlab_hosts`) — a fresh clone will fail without it.
+1. **Rendering** — `tools/render-topology.yml` parses `.env` → `cluster-topology.yml` via template `cluster-topology.yml.j2`
+2. **IP resolution** — `tools/generate-cluster-ips.yml` resolves CloudLab hostnames to IPs, writes `lab-setup/inventory/group_vars/all/cluster_ips.yml` and `kubespray-overlay/inventory/lab/group_vars/all/cluster_ips.yml`
+3. **Preparing** — `lab-setup/playbook/preparing.yaml` runs role `preparing_server` on host `nodes`
+4. **HAProxy LB** — `lab-setup/playbook/haproxy-lb.yaml` runs role `haproxy_lb` on host `lb`
+5. **Kubespray** — `run-cluster-setup.sh` creates a venv at `kubespray/.venv`, installs deps from `kubespray/requirements.txt`, then runs:
+   ```
+   ansible-playbook -i ../kubespray-overlay/inventory/lab/inventory.ini cluster.yml -b
+   ```
+   from within `kubespray/`
+6. **Post-cluster** — `lab-setup/playbook/postcluster.yaml` runs on `master1`: roles `k8s_ansible_deps` + `cluster_addons` (cert-issuer, monitoring, istio, online-boutique)
+7. **Kubeconfig** — `source ./get-kubeconfig.sh master1 admin.conf` fetches kubeconfig and sets `KUBECONFIG`
+8. **kubectl copy** — Copies kubectl from master1 to `~/.local/bin/kubectl`
 
-## Gotchas
+## Critical gotchas
 
-- `kubespray-overlay/inventory/lab/artifacts/admin.conf` and `.../credentials/kubeadm_certificate_key.creds` are tracked in git despite being listed in `.gitignore` (gitignore doesn't apply to already-tracked files) — treat them as live secrets.
-- `postcluster.yaml` (tags: `deps`, `cert-issuer`, `monitoring`, `istio`, `online-boutique`) runs helm-based add-ons on `master1`; `preparing` is hardening/package setup across all nodes.
+- **`.env` is the source of truth** for all hostnames/IPs. If it’s missing or incomplete, `cluster-topology.yml` will be wrong, and everything downstream fails.
+- **Run from repo root** — the script aborts if `lab-setup/` or `kubespray/` is missing.
+- **Kubespray venv** — the first `kubespray` run creates `kubespray/.venv`; subsequent runs reuse it. Do not delete it mid-flow.
+- **Collections** — if `lab-setup/collections/requirements.yml` exists, collections are installed into `./.ansible/collections` via `ansible-galaxy install -r`.
+- **Python deps** — `lab-setup/requirements.txt` (kubernetes, PyYAML, jsonpatch) are installed with `python3 -m pip install --user -r lab-setup/requirements.txt`.
+- **`generate-cluster-ips.yml`** must run successfully before the Ansible playbooks, or the IP vars in the inventory will be missing/empty.
+- **`get-kubeconfig.sh` must be sourced**, not executed: `source ./get-kubeconfig.sh master1 admin.conf`
+- **Postcluster only runs on master1** — it targets `master1` specifically.
+- The script uses `should_run` to skip steps; if you `--start-from=kubespray`, steps before kubespray are skipped entirely.
