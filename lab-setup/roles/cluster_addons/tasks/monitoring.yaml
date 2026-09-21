@@ -195,6 +195,10 @@
               hosts: ["{{ prometheus_host }}"]
         prometheusSpec:
           retention: "{{ prometheus_retention }}"
+          retentionSize: "{{ prometheus_retention_size }}"
+          scrapeInterval: "{{ prometheus_scrape_interval }}"
+          scrapeTimeout: "{{ prometheus_scrape_timeout }}"
+          evaluationInterval: "{{ prometheus_evaluation_interval }}"
           storageSpec:
             volumeClaimTemplate:
               spec:
