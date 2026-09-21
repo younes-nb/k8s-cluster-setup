@@ -151,6 +151,14 @@
     update: true
   become: false
 
+- name: Ensure cluster repo ownership
+  ansible.builtin.file:
+    path: "{{ cluster_repo_dest }}"
+    state: directory
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user_group }}"
+    recurse: true
+
 - name: Clone Kubespray upstream (git)
   ansible.builtin.git:
     repo: "{{ kubespray_git_url }}"
