@@ -37,6 +37,22 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || { err "Missing required command: $1"; exit 127; }
 }
 
+# Copies kubectl from master1 and puts it on PATH for this shell.
+# NOTE: never `source ~/.bashrc` here. Non-interactive shells return
+# early from the default Ubuntu .bashrc, so the PATH export would never
+# apply — and any failing command in .bashrc would abort this script
+# under `set -e`.
+install_kubectl() {
+  mkdir -p "$HOME/.local/bin"
+  scp "${KUBECONFIG_HOST}:/usr/local/bin/kubectl" "$HOME/.local/bin/kubectl"
+  chmod +x "$HOME/.local/bin/kubectl"
+  touch "$HOME/.bashrc"
+  grep -q 'export PATH=$HOME/.local/bin:$PATH' "$HOME/.bashrc" \
+    || echo 'export PATH=$HOME/.local/bin:$PATH' >> "$HOME/.bashrc"
+  export PATH="$HOME/.local/bin:$PATH"
+  kubectl version --client
+}
+
 usage() {
   cat <<EOF
 Usage: $0 [--start-from=STEP] | [STEP]
@@ -46,6 +62,7 @@ Steps (in order):
   haproxy     - run lab-setup/haproxy-lb.yaml
   kubespray   - deploy cluster with kubespray (venv + cluster.yml)
   postcluster - run lab-setup/postcluster.yaml
+  kubectl     - copy kubectl from master1 to ~/.local/bin
   kubeconfig  - fetch kubeconfig via get-kubeconfig.sh
 
 Examples:
@@ -61,7 +78,7 @@ if [[ $# -gt 0 ]]; then
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --start-from=*) START_FROM="${1#*=}" ;;
-    preparing|haproxy|kubespray|postcluster|kubeconfig) START_FROM="$1" ;;
+    preparing|haproxy|kubespray|postcluster|kubectl|kubeconfig) START_FROM="$1" ;;
     *) err "Unknown argument: $1"; usage; exit 2 ;;
   esac
 fi
@@ -180,29 +197,22 @@ else
   info "Skipping step: postcluster"
 fi
 
-# ---------- 6) Copy kubectl from master1 to runner node ----------
+# ---------- 5) Copy kubectl from master1 to runner node ----------
 if should_run kubectl; then
   step_banner "Copying kubectl from master1 to runner"
-  
-  mkdir -p ~/.local/bin
-  
-  scp master1:/usr/local/bin/kubectl ~/.local/bin/kubectl
-  
-  chmod +x ~/.local/bin/kubectl
-  
-  grep -q 'export PATH=$HOME/.local/bin:$PATH' ~/.bashrc || echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
-  
-  source ~/.bashrc
-
-  kubectl version --client
+  install_kubectl
   ok "kubectl copied and available"
 else
   info "Skipping step: kubectl"
 fi
 
-# ---------- 5) Fetch kubeconfig ----------
+# ---------- 6) Fetch kubeconfig ----------
 if should_run kubeconfig; then
   step_banner "Fetching kubeconfig to ./${KUBECONFIG_DEST}"
+  if ! command -v kubectl >/dev/null 2>&1; then
+    info "kubectl not found; installing it first (same as kubectl step)"
+    install_kubectl
+  fi
   source "$GET_KUBECONFIG" "$KUBECONFIG_HOST" "$KUBECONFIG_DEST"
   ok "Kubeconfig written to $(realpath "$KUBECONFIG_DEST")"
 else

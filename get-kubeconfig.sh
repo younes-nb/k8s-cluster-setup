@@ -17,14 +17,21 @@ OUT="${2:-admin.conf}"
 command -v ssh >/dev/null || { echo "ssh not found"; return 1; }
 command -v kubectl >/dev/null || { echo "kubectl not found"; return 1; }
 
-rm -f -- "$OUT"
-ssh ${SSH_OPTS:-} "$HOST" 'sudo cat /etc/kubernetes/admin.conf' > "$OUT"
-
-if [[ ! -s "$OUT" ]]; then
-  echo "ERROR: fetched kubeconfig is empty ($OUT)"
+TMP_OUT="${OUT}.tmp.$$"
+rm -f -- "$TMP_OUT"
+if ! ssh ${SSH_OPTS:-} "$HOST" 'sudo cat /etc/kubernetes/admin.conf' > "$TMP_OUT"; then
+  echo "ERROR: ssh fetch from $HOST failed; previous $OUT left untouched"
+  rm -f -- "$TMP_OUT"
   return 1
 fi
-chmod 600 "$OUT"
+
+if [[ ! -s "$TMP_OUT" ]]; then
+  echo "ERROR: fetched kubeconfig is empty; previous $OUT left untouched"
+  rm -f -- "$TMP_OUT"
+  return 1
+fi
+chmod 600 "$TMP_OUT"
+mv -f -- "$TMP_OUT" "$OUT"
 
 export KUBECONFIG="$PWD/$OUT"
 alias k=kubectl
