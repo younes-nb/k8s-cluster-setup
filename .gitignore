@@ -9,3 +9,4 @@ runner-init/group_vars/cloudlab.local.yml
 kubespray-overlay/inventory/lab/artifacts/admin.conf
 .ansible/
 /admin.conf
+AGENTS.md
