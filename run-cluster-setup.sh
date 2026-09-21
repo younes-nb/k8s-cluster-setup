@@ -106,6 +106,21 @@ need_cmd bash
 [[ -d "$LAB_DIR" && -d "$KUBESPRAY_DIR" ]] || { err "Run from repo root. Missing $LAB_DIR/ or $KUBESPRAY_DIR/"; exit 1; }
 [[ -f "$GET_KUBECONFIG" ]] || { err "Missing $GET_KUBECONFIG in repo root"; exit 1; }
 
+# Generated files must be writable by the invoking user. Parts of this
+# checkout were created as root, which otherwise surfaces later as a
+# cryptic "Destination ... not writable" from the generate-cluster-ips play.
+for _f in cluster-topology.yml \
+  "${LAB_DIR}/inventory/group_vars/all/cluster_ips.yml" \
+  "kubespray-overlay/inventory/lab/group_vars/all/cluster_ips.yml" \
+  "${KUBECONFIG_DEST}"; do
+  _d="$(dirname "$_f")"
+  if [[ -e "$_f" && ! -w "$_f" ]] || [[ ! -e "$_f" && ! -w "$_d" ]]; then
+    err "Cannot write $_f. Fix ownership, e.g.: sudo chown -R $(id -un):$(id -gn) lab-setup kubespray-overlay"
+    exit 1
+  fi
+done
+unset _f _d
+
 export ANSIBLE_SSH_CONTROL_PATH_DIR=/tmp/ansible-cp
 mkdir -p /tmp/ansible-cp
 chmod 700 /tmp/ansible-cp
