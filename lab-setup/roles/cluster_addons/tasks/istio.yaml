@@ -4,6 +4,12 @@
     name: "{{ istio_repo_name }}"
     repo_url: "{{ istio_repo_url }}"
 
+- name: Update Istio Helm repo index
+  ansible.builtin.command: >
+    helm repo update {{ istio_repo_name }}
+  become: true
+  changed_when: false
+
 - name: Ensure Istio namespace exists
   kubernetes.core.k8s:
     state: present

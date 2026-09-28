@@ -91,6 +91,23 @@ data:
       scrape_interval = "{{ alloy_scrape_interval }}"
     }
 
+    // node-exporter DaemonSet: discover pods directly (ServiceMonitor path
+    // silently yields no samples in this setup).
+    prometheus.scrape "nodeexporter" {
+      targets = [
+        {"__address__" = "155.98.36.127:9100", "node" = "master1"},
+        {"__address__" = "155.98.36.133:9100", "node" = "master2"},
+        {"__address__" = "155.98.36.126:9100", "node" = "master3"},
+        {"__address__" = "155.98.36.124:9100", "node" = "worker1"},
+        {"__address__" = "155.98.36.125:9100", "node" = "worker2"},
+        {"__address__" = "155.98.36.136:9100", "node" = "worker3"},
+      ]
+      forward_to = [prometheus.remote_write.mimir.receiver]
+      scrape_interval = "{{ alloy_scrape_interval }}"
+      scheme = "http"
+      metrics_path = "/metrics"
+    }
+
     prometheus.remote_write "mimir" {
       endpoint {
         url = "http://mimir.{{ monitoring_ns }}.svc.cluster.local:8080/api/v1/push"
