@@ -1,0 +1,24 @@
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: tempo-plaintext
+  namespace: {{ istio_ns }}
+spec:
+  host: tempo.{{ monitoring_ns }}.svc.cluster.local
+  exportTo:
+  - "*"
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+---
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: otel-tracing
+  namespace: {{ istio_ns }}
+spec:
+  tracing:
+  - providers:
+    - name: otel-tempo
+    randomSamplingPercentage: {{ tempo_sampling_pct }}

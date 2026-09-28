@@ -1,0 +1,32 @@
+---
+- name: Apply Mimir manifests (ConfigMap, Deployment, PVC, Service)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    template: mimir.yaml.j2
+  register: _mimir_cfg
+
+- name: Wait for Mimir deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: mimir
+    namespace: "{{ monitoring_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _mimir_dep
+  until: >
+    _mimir_dep.resources | length > 0 and
+    (_mimir_dep.resources[0].status.availableReplicas | default(0)) >=
+    (_mimir_dep.resources[0].spec.replicas | default(1))
+  retries: 40
+  delay: 15
+
+
+- name: Restart Mimir on config change
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ monitoring_ns }}"
+    rollout restart deployment/mimir
+  when: _mimir_cfg is changed
+  changed_when: true
+  failed_when: false

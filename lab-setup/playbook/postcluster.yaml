@@ -13,4 +13,9 @@
         - cert-issuer
         - monitoring
         - istio
-        - online-boutique
+        - tempo
+        - loki
+        - mimir
+        - alloy
+        - beyla
+        - train-ticket

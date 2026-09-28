@@ -1,0 +1,129 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: beyla
+  namespace: {{ monitoring_ns }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: beyla
+rules:
+  - apiGroups: [""]
+    resources: [nodes, pods, namespaces, services]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, daemonsets, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: ["extensions"]
+    resources: [daemonsets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: beyla
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: beyla
+subjects:
+  - kind: ServiceAccount
+    name: beyla
+    namespace: {{ monitoring_ns }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beyla-conf
+  namespace: {{ monitoring_ns }}
+data:
+  beyla-config.yml: |
+    routes:
+      unmatched: heuristic
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: beyla
+  namespace: {{ monitoring_ns }}
+  labels:
+    app: beyla
+spec:
+  selector:
+    matchLabels:
+      app: beyla
+  template:
+    metadata:
+      labels:
+        app: beyla
+    spec:
+      serviceAccountName: beyla
+      hostNetwork: true
+      hostPID: true
+      containers:
+      - name: beyla
+        image: {{ beyla_image }}
+        env:
+          - name: BEYLA_SERVICE_NAMESPACE
+            value: "train-ticket"
+          - name: BEYLA_TRACE_PRINTER
+            value: "text"
+          - name: BEYLA_LOG_LEVEL
+            value: "info"
+          - name: BEYLA_INTERNAL_METRICS_PROMETHEUS_PORT
+            value: "8080"
+          - name: BEYLA_KUBE_METADATA_ENABLE
+            value: "true"
+          - name: BEYLA_OPEN_PORT
+            value: "0"
+          - name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: "http://alloy.{{ monitoring_ns }}.svc.cluster.local:4317"
+        ports:
+        - {containerPort: 8080, name: metrics}
+        - {containerPort: 4317, name: otlp-grpc}
+        - {containerPort: 4318, name: otlp-http}
+        volumeMounts:
+        - {name: conf, mountPath: /config}
+        - {name: debugfs, mountPath: /sys/kernel/debug, readOnly: true}
+        - {name: tracefs, mountPath: /sys/kernel/tracing, readOnly: true}
+        securityContext:
+          privileged: true
+          capabilities:
+            add: [SYS_ADMIN, SYS_RESOURCE, CAP_DAC_OVERRIDE, CAP_SYS_PTRACE, CAP_BPF]
+        resources:
+          requests: {cpu: "100m", memory: "256Mi"}
+          limits: {cpu: "2000m", memory: "1Gi"}
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      volumes:
+      - name: conf
+        configMap:
+          name: beyla-conf
+      - name: debugfs
+        hostPath:
+          path: /sys/kernel/debug
+      - name: tracefs
+        hostPath:
+          path: /sys/kernel/tracing
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: beyla
+  namespace: {{ monitoring_ns }}
+spec:
+  selector:
+    app: beyla
+  ports:
+  - {name: metrics, port: 8080, targetPort: 8080}

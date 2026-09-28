@@ -1,0 +1,32 @@
+---
+- name: Apply Loki manifests (ConfigMap, Deployment, PVC, Service)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    template: loki.yaml.j2
+  register: _loki_cfg
+
+- name: Wait for Loki deployment to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: loki
+    namespace: "{{ monitoring_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _loki_dep
+  until: >
+    _loki_dep.resources | length > 0 and
+    (_loki_dep.resources[0].status.availableReplicas | default(0)) >=
+    (_loki_dep.resources[0].spec.replicas | default(1))
+  retries: 30
+  delay: 10
+
+
+- name: Restart Loki on config change
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ monitoring_ns }}"
+    rollout restart deployment/loki
+  when: _loki_cfg is changed
+  changed_when: true
+  failed_when: false

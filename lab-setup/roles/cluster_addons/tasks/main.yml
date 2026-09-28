@@ -5,8 +5,26 @@
 - import_tasks: monitoring.yaml
   tags: [monitoring]
 
+- import_tasks: grafana_datasources.yaml
+  tags: [monitoring]
+
 - import_tasks: istio.yaml
   tags: [istio]
 
-- import_tasks: online_boutique.yaml
-  tags: [online-boutique]
+- import_tasks: tempo.yaml
+  tags: [tempo]
+
+- import_tasks: loki.yaml
+  tags: [loki]
+
+- import_tasks: mimir.yaml
+  tags: [mimir]
+
+- import_tasks: alloy.yaml
+  tags: [alloy]
+
+- import_tasks: beyla.yaml
+  tags: [beyla]
+
+- import_tasks: train_ticket.yaml
+  tags: [train-ticket]

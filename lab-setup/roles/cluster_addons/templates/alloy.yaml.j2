@@ -1,0 +1,190 @@
+---
+# Alloy (Grafana): one Deployment that
+#  - scrapes everything the Prometheus operator monitors already describe
+#    (ServiceMonitors/PodMonitors/Probes, incl. kubelet + istio-dataplane),
+#    remote-writing into Mimir (Prometheus keeps scraping in parallel until P5);
+#  - ships all pod logs into Loki;
+#  - receives OTLP traces (Beyla next) and forwards them to Tempo.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alloy
+  namespace: {{ monitoring_ns }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: alloy-scrape
+rules:
+  - apiGroups: [""]
+    resources: [nodes, nodes/metrics, nodes/proxy, services, endpoints, pods, pods/log]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [servicemonitors, podmonitors, probes, scrapeconfigs]
+    verbs: [get, list, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alloy-scrape
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: alloy-scrape
+subjects:
+  - kind: ServiceAccount
+    name: alloy
+    namespace: {{ monitoring_ns }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-conf
+  namespace: {{ monitoring_ns }}
+data:
+  config.alloy: |
+    // Metrics: operator components scrape and forward directly to Mimir (MetricsReceiver).
+    // See https://grafana.com/docs/alloy/latest/reference/components/prometheus/prometheus.operator.servicemonitors/
+    prometheus.operator.servicemonitors "all" {
+      forward_to = [prometheus.remote_write.mimir.receiver]
+    }
+    prometheus.operator.podmonitors "all" {
+      forward_to = [prometheus.remote_write.mimir.receiver]
+    }
+    prometheus.operator.probes "all" {
+      forward_to = [prometheus.remote_write.mimir.receiver]
+    }
+
+    // kubelet/cadvisor: the operator ServiceMonitors authenticate with local
+    // files, which this Alloy version cannot honor -- scrape explicitly
+    // through the apiserver proxy with the pod serviceaccount.
+    prometheus.scrape "kubelet" {
+      targets = [
+        {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/master1/proxy/metrics/cadvisor", "node" = "master1"},
+        {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/master2/proxy/metrics/cadvisor", "node" = "master2"},
+        {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/master3/proxy/metrics/cadvisor", "node" = "master3"},
+        {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/worker1/proxy/metrics/cadvisor", "node" = "worker1"},
+        {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/worker2/proxy/metrics/cadvisor", "node" = "worker2"},
+        {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/worker3/proxy/metrics/cadvisor", "node" = "worker3"},
+      ]
+      forward_to      = [prometheus.remote_write.mimir.receiver]
+      scrape_interval = "{{ alloy_scrape_interval }}"
+      scheme          = "https"
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+      }
+    }
+
+    prometheus.remote_write "mimir" {
+      endpoint {
+        url = "http://mimir.{{ monitoring_ns }}.svc.cluster.local:8080/api/v1/push"
+      }
+    }
+
+    // Logs: every pod -> Loki.
+    discovery.kubernetes "pods" {
+      role = "pod"
+    }
+    loki.source.kubernetes "pods" {
+      targets    = discovery.kubernetes.pods.targets
+      forward_to = [loki.write.loki.receiver]
+    }
+    loki.write "loki" {
+      endpoint {
+        url = "http://loki.{{ monitoring_ns }}.svc.cluster.local:3100/loki/api/v1/push"
+      }
+    }
+
+    // Traces: OTLP in (Beyla next) -> Tempo.
+    otelcol.receiver.otlp "in" {
+      grpc {
+        endpoint = "0.0.0.0:4317"
+      }
+      http {
+        endpoint = "0.0.0.0:4318"
+      }
+      output {
+        metrics = []
+        logs    = []
+        traces  = [otelcol.processor.batch.out.input]
+      }
+    }
+    otelcol.processor.batch "out" {
+      output {
+        metrics = []
+        logs    = []
+        traces  = [otelcol.exporter.otlp.tempo.input]
+      }
+    }
+    otelcol.exporter.otlp "tempo" {
+      client {
+        endpoint = "tempo.{{ monitoring_ns }}.svc.cluster.local:4317"
+        tls {
+          insecure             = true
+          insecure_skip_verify = true
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alloy
+  namespace: {{ monitoring_ns }}
+  labels:
+    app: alloy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alloy
+  template:
+    metadata:
+      labels:
+        app: alloy
+    spec:
+      serviceAccountName: alloy
+      containers:
+      - name: alloy
+        image: {{ alloy_image }}
+        args:
+          - run
+          - --server.http.listen-addr=0.0.0.0:12345
+          - --storage.path=/var/lib/alloy/data
+          - /etc/alloy/config.alloy
+        ports:
+        - {containerPort: 12345, name: http}
+        - {containerPort: 4317, name: otlp-grpc}
+        - {containerPort: 4318, name: otlp-http}
+        volumeMounts:
+        - {name: conf, mountPath: /etc/alloy}
+        resources:
+          requests: {cpu: "200m", memory: "512Mi"}
+          limits: {cpu: "2000m", memory: "2Gi"}
+        readinessProbe:
+          httpGet: {path: /-/ready, port: 12345}
+          initialDelaySeconds: 20
+          periodSeconds: 10
+      volumes:
+      - name: conf
+        configMap:
+          name: alloy-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alloy
+  namespace: {{ monitoring_ns }}
+spec:
+  selector:
+    app: alloy
+  ports:
+  - {name: http, port: 12345, targetPort: 12345}
+

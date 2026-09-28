@@ -36,6 +36,14 @@
     values:
       meshConfig:
         enablePrometheusMerge: true
+        defaultConfig:
+          proxyStatsMatcher:
+            inclusionRegexps: "{{ istio_stats_inclusions }}"
+        extensionProviders:
+          - name: otel-tempo
+            opentelemetry:
+              port: 4317
+              service: "tempo.{{ monitoring_ns }}.svc.cluster.local"
       pilot:
         serviceMonitor:
           enabled: true

@@ -1,0 +1,78 @@
+---
+- name: Start Grafana port-forward on master1
+  ansible.builtin.shell: |
+    pkill -f "port-forward svc/prometheus-stack-grafan[a] " 2>/dev/null || true
+    nohup kubectl --kubeconfig="{{ kubeconfig_path }}" port-forward \
+      svc/prometheus-stack-grafana 3000:80 -n {{ monitoring_ns }} --address 127.0.0.1 \
+      >/tmp/grafana-pf.log 2>&1 &
+    for i in $(seq 1 30); do
+      curl -sf -m 3 http://127.0.0.1:3000/api/health >/dev/null 2>&1 && exit 0
+      sleep 2
+    done
+    exit 1
+  register: _graf_pf
+  changed_when: false
+  failed_when: _graf_pf.rc != 0
+
+- name: Check existing Grafana datasources
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:3000/api/datasources"
+    user: admin
+    password: "{{ grafana_admin_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: _graf_ds
+  failed_when: false
+
+- name: Create missing Grafana datasources (Mimir, Loki, Tempo)
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:3000/api/datasources"
+    method: POST
+    user: admin
+    password: "{{ grafana_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      name: "{{ item.name }}"
+      type: "{{ item.type }}"
+      url: "{{ item.url }}"
+      access: proxy
+      isDefault: "{{ item.is_default | default(false) }}"
+    status_code: 200
+  loop:
+    - name: Mimir
+      type: prometheus
+      url: "http://mimir.{{ monitoring_ns }}.svc.cluster.local:8080/prometheus"
+      is_default: true
+    - name: Loki
+      type: loki
+      url: "http://loki.{{ monitoring_ns }}.svc.cluster.local:3100"
+    - name: Tempo
+      type: tempo
+      url: "http://tempo.{{ monitoring_ns }}.svc.cluster.local:3100"
+  loop_control:
+    label: "{{ item.name }}"
+  when: >-
+    _graf_ds.status | default(0) == 200 and
+    (_graf_ds.json | default([]) | selectattr('name', 'equalto', item.name) | list | length == 0)
+
+- name: Import k6 dashboard into Grafana
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:3000/api/dashboards/db"
+    method: POST
+    user: admin
+    password: "{{ grafana_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      dashboard: "{{ lookup('template', 'k6-dashboard.json.j2') | from_json }}"
+      overwrite: true
+    status_code: 200
+  register: _graf_dash
+  failed_when: false
+
+- name: Stop Grafana port-forward on master1
+  ansible.builtin.shell: |
+    pkill -f "port-forward svc/prometheus-stack-grafan[a] " 2>/dev/null || true
+  changed_when: false
+  failed_when: false

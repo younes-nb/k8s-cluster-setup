@@ -20,6 +20,7 @@ prometheus_retention: "30d"
 prometheus_retention_size: "45GB"
 prometheus_pvc_size: "50Gi"
 prometheus_scrape_interval: "10s"
+prometheus_enabled: false
 prometheus_scrape_timeout: "9s"
 prometheus_evaluation_interval: "10s"
 istio_scrape_interval: "10s"
@@ -35,16 +36,54 @@ istio_version: "1.28.0"
 istio_dash_tmp: "/tmp/istio-{{ istio_git_branch }}"
 istio_dashboards_rel_path: "manifests/addons/dashboards"
 istio_grafana_folder: "Istio"
+istio_stats_inclusions:
+  - '.*\.upstream_rq_active$'
+  - '.*\.upstream_rq_pending_active$'
+  - '.*\.upstream_rq_pending_overflow$'
+  - '.*\.upstream_rq_timeout$'
+  - '.*\.upstream_rq_retry$'
+  - '.*\.no_healthy_upstream$'
+  - '.*\.downstream_cx_active$'
 
-ob_ns: "online-boutique"
-ob_repo_url: "https://github.com/GoogleCloudPlatform/microservices-demo.git"
-ob_repo_version: "v0"
-ob_clone_dir: "/tmp/microservices-demo"
-ob_enable_istio_injection: true
-ob_min_replicas: 1
-ob_max_replicas: 10
-ob_cpu_avg_utilization: 60
-ob_host: "online-boutique.{{ base_domain }}"
-ob_tls_secret: "online-boutique-general-tls"
-ob_wait_retries: 60
-ob_wait_delay: 5
+tempo_image: "docker.io/grafana/tempo:2.10.8"
+tempo_retention: "336h"
+tempo_pvc_size: "30Gi"
+tempo_sampling_pct: 10.0
+
+loki_image: "docker.io/grafana/loki:3.4.2"
+loki_pvc_size: "10Gi"
+loki_retention: "336h"
+
+mimir_image: "docker.io/grafana/mimir:2.16.0"
+mimir_pvc_size: "50Gi"
+mimir_retention: "720h"
+mimir_max_series: 500000
+
+alloy_image: "docker.io/grafana/alloy:v1.20.0"
+alloy_scrape_interval: "10s"
+
+beyla_image: "docker.io/grafana/beyla:3.36.0"
+
+tt_ns: "train-ticket"
+tt_repo_url: "https://github.com/FudanSELab/train-ticket.git"
+tt_repo_version: "0.0.4"
+tt_clone_dir: "/tmp/train-ticket"
+tt_enable_istio_injection: true
+tt_min_replicas: 1
+tt_max_replicas: 10
+tt_cpu_avg_utilization: 80
+tt_host: "train-ticket.{{ base_domain }}"
+tt_tls_secret: "trainticket-tls"
+tt_wait_retries: 60
+tt_wait_delay: 5
+tt_mongo_image: "mongo:4.4"
+tt_app_req_cpu: "500m"
+tt_app_req_mem: "512Mi"
+tt_app_lim_cpu: "2"
+tt_app_lim_mem: "1Gi"
+tt_db_lim_cpu: "1"
+tt_db_lim_mem: "512Mi"
+tt_java_tool_options: "-Xmx512m"
+tt_db_pvc_size: "2Gi"
+tt_mongo_data_path: "/data/db"
+tt_mysql_data_path: "/var/lib/mysql"

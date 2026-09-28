@@ -1,0 +1,398 @@
+---
+
+- name: Ensure Train-Ticket namespace exists (Istio injection enabled)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ tt_ns }}"
+        labels: >-
+          {{
+            {'istio-injection': 'enabled'} if tt_enable_istio_injection | bool else {}
+          }}
+
+- name: Ensure git is installed
+  ansible.builtin.apt:
+    name: git
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Clone/Update Train-Ticket repo (shallow, pinned tag)
+  ansible.builtin.git:
+    repo: "{{ tt_repo_url }}"
+    dest: "{{ tt_clone_dir }}"
+    version: "{{ tt_repo_version }}"
+    depth: 1
+    force: true
+  register: _tt_git
+
+- name: Stage selector-fixed manifests (upstream 0.0.4 omits spec.selector)
+  ansible.builtin.template:
+    src: inject_selectors.py
+    dest: "{{ tt_clone_dir }}/inject_selectors.py"
+    mode: "0755"
+
+- name: Render apply-ready manifests
+  ansible.builtin.command: >
+    python3 "{{ tt_clone_dir }}/inject_selectors.py"
+    "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part1.yml"
+    "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part2.yml"
+    "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part3.yml"
+    "{{ tt_clone_dir }}/deployment/k8s-deployment.ready"
+  environment:
+    TT_MONGO_IMAGE: "{{ tt_mongo_image }}"
+  register: _tt_render
+  changed_when: false
+
+- name: Apply Train-Ticket manifests (parts 1-3, jaeger applied then removed below)
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ tt_ns }}"
+    apply -f "{{ tt_clone_dir }}/deployment/k8s-deployment.ready/{{ item }}"
+  loop:
+    - ts-deployment-part1.yml
+    - ts-deployment-part2.yml
+    - ts-deployment-part3.yml
+  register: _tt_apply
+  changed_when: >
+    ('created' in _tt_apply.stdout) or
+    ('configured' in _tt_apply.stdout) or
+    ('unchanged' not in _tt_apply.stdout)
+
+- name: Remove jaeger/zipkin leftovers (not part of the serving benchmark)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: absent
+    kind: "{{ item.kind }}"
+    api_version: v1
+    name: "{{ item.name }}"
+    namespace: "{{ tt_ns }}"
+  loop:
+    - { kind: Deployment, name: jaeger }
+    - { kind: Service, name: jaeger }
+    - { kind: Service, name: jaeger-query }
+    - { kind: Service, name: jaeger-collector }
+    - { kind: Service, name: zipkin }
+  ignore_errors: true
+
+- name: Apply ts-avatar-service (absent upstream at {{ tt_repo_version }})
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    template: ts-avatar-service.yaml.j2
+
+- name: Apply dashboard nginx override (adds backend-dialect proxy locations
+    so ALL saga traffic can enter through the frontend; rollback = delete
+    this ConfigMap + remove the volume below)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: ts-ui-dashboard-nginx
+        namespace: "{{ tt_ns }}"
+      data:
+        nginx.conf: "{{ lookup('template', 'dashboard-nginx.conf.j2') }}"
+
+- name: Mount nginx override into ts-ui-dashboard
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ts-ui-dashboard
+        namespace: "{{ tt_ns }}"
+      spec:
+        template:
+          spec:
+            containers:
+              - name: ts-ui-dashboard
+                volumeMounts:
+                  - name: nginx-override
+                    mountPath: /usr/local/openresty/nginx/conf/nginx.conf
+                    subPath: nginx.conf
+            volumes:
+              - name: nginx-override
+                configMap:
+                  name: ts-ui-dashboard-nginx
+                  items:
+                    - key: nginx.conf
+                      path: nginx.conf
+
+- name: Get Train-Ticket deployments
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ tt_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _tt_deploys
+
+- name: Wait for all Train-Ticket deployments to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item.metadata.name }}"
+    namespace: "{{ tt_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _wait_each
+  until: >
+    _wait_each.resources | length > 0 and
+    (_wait_each.resources[0].status.availableReplicas | default(0)) >=
+    (_wait_each.resources[0].spec.replicas | default(1))
+  retries: "{{ tt_wait_retries }}"
+  delay: "{{ tt_wait_delay }}"
+  loop: "{{ _tt_deploys.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+
+- name: Pin mongo images to {{ tt_mongo_image }} (upstream floats on bare `mongo`)
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ tt_ns }}"
+    set image "deployment/{{ item.metadata.name }}"
+    "{{ item.metadata.name }}={{ tt_mongo_image }}"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | selectattr('metadata.name', 'match', '.*-mongo$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: _tt_pin
+  changed_when: "'image updated' in _tt_pin.stdout"
+  failed_when: false
+
+- name: Set uniform app resources ({{ tt_app_req_cpu }}/{{ tt_app_req_mem }} req, {{ tt_app_lim_cpu }}/{{ tt_app_lim_mem }} lim)
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ tt_ns }}"
+    set resources "deployment/{{ item.metadata.name }}"
+    -c "{{ item.metadata.name }}"
+    --requests="cpu={{ tt_app_req_cpu }},memory={{ tt_app_req_mem }}"
+    --limits="cpu={{ tt_app_lim_cpu }},memory={{ tt_app_lim_mem }}"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | rejectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: _tt_res
+  changed_when: "'resource requirements updated' in _tt_res.stdout"
+  failed_when: false
+
+- name: Set DB resource limits ({{ tt_db_lim_cpu }}/{{ tt_db_lim_mem }}; requests stay upstream)
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ tt_ns }}"
+    set resources "deployment/{{ item.metadata.name }}"
+    -c "{{ item.metadata.name }}"
+    --limits="cpu={{ tt_db_lim_cpu }},memory={{ tt_db_lim_mem }}"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | selectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: _tt_dbres
+  changed_when: "'resource requirements updated' in _tt_dbres.stdout"
+  failed_when: false
+
+- name: Inject JAVA_TOOL_OPTIONS=-Xmx512m on app containers
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ tt_ns }}"
+    set env "deployment/{{ item.metadata.name }}"
+    -c "{{ item.metadata.name }}"
+    "JAVA_TOOL_OPTIONS={{ tt_java_tool_options }}"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | rejectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  register: _tt_env
+  changed_when: "'env updated' in _tt_env.stdout"
+  failed_when: false
+
+- name: Create per-DB data PVCs ({{ tt_db_pvc_size }}, {{ storage_class }})
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ item.metadata.name }}-data"
+        namespace: "{{ tt_ns }}"
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: "{{ storage_class }}"
+        resources:
+          requests:
+            storage: "{{ tt_db_pvc_size }}"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | selectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}-data"
+  register: _tt_pvc
+
+- name: Bounce DB deployments onto fresh PVCs (only when their PVC was created)
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ tt_ns }}"
+    rollout restart "deployment/{{ item.item.metadata.name }}"
+  loop: "{{ _tt_pvc.results }}"
+  loop_control:
+    label: "{{ item.item.metadata.name }}"
+  when: item is changed
+  register: _tt_bounce
+  changed_when: "'restarted' in _tt_bounce.stdout"
+  failed_when: false
+
+- name: Mount data PVCs into mongo deployments ({{ tt_mongo_data_path }})
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ tt_ns }}"
+      spec:
+        template:
+          spec:
+            containers:
+              - name: "{{ item.metadata.name }}"
+                volumeMounts:
+                  - name: "{{ item.metadata.name }}-data"
+                    mountPath: "{{ tt_mongo_data_path }}"
+            volumes:
+              - name: "{{ item.metadata.name }}-data"
+                persistentVolumeClaim:
+                  claimName: "{{ item.metadata.name }}-data"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | selectattr('metadata.name', 'match', '.*-mongo$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Mount data PVCs into mysql deployments ({{ tt_mysql_data_path }})
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ tt_ns }}"
+      spec:
+        template:
+          spec:
+            containers:
+              - name: "{{ item.metadata.name }}"
+                volumeMounts:
+                  - name: "{{ item.metadata.name }}-data"
+                    mountPath: "{{ tt_mysql_data_path }}"
+            volumes:
+              - name: "{{ item.metadata.name }}-data"
+                persistentVolumeClaim:
+                  claimName: "{{ item.metadata.name }}-data"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | selectattr('metadata.name', 'match', '.*-mysql$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Create/Update CPU HPAs (DBs excluded — HPA would scale divergent DB copies)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: "{{ item.metadata.name }}-hpa"
+        namespace: "{{ tt_ns }}"
+      spec:
+        minReplicas: "{{ tt_min_replicas }}"
+        maxReplicas: "{{ tt_max_replicas }}"
+        scaleTargetRef:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: "{{ item.metadata.name }}"
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: "{{ tt_cpu_avg_utilization }}"
+  loop: >-
+    {{ _tt_deploys.resources | default([])
+       | rejectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
+  loop_control:
+    label: "{{ item.metadata.name }}"
+
+- name: Create/Update frontend-only Ingress (all traffic via ts-ui-dashboard, {{ ingress_class }}, TLS)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: train-ticket
+        namespace: "{{ tt_ns }}"
+        annotations:
+          kubernetes.io/tls-acme: "true"
+          cert-manager.io/cluster-issuer: "{{ cert_issuer_name }}"
+          nginx.ingress.kubernetes.io/ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+          nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+          nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+          nginx.ingress.kubernetes.io/proxy-body-size: 10m
+      spec:
+        ingressClassName: "{{ ingress_class }}"
+        rules:
+          - host: "{{ tt_host }}"
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: ts-ui-dashboard
+                      port:
+                        number: 8080
+        tls:
+          - hosts: ["{{ tt_host }}"]
+            secretName: "{{ tt_tls_secret }}"
+
+- name: Wait for TLS certificate to be Ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: cert-manager.io/v1
+    kind: Certificate
+    name: "{{ tt_tls_secret }}"
+    namespace: "{{ tt_ns }}"
+  register: _tt_cert
+  until: >
+    (_tt_cert.resources | length) > 0 and
+    (
+      _tt_cert.resources[0].status.conditions | default([])
+      | selectattr('type','equalto','Ready')
+      | selectattr('status','equalto','True')
+      | list | length
+    ) > 0
+  retries: 40
+  delay: 15

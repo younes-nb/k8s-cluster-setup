@@ -1,0 +1,51 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ts-avatar-service
+  namespace: {{ tt_ns }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ts-avatar-service
+  template:
+    metadata:
+      labels:
+        app: ts-avatar-service
+    spec:
+      containers:
+        - name: ts-avatar-service
+          image: codewisdom/ts-avatar-service:0.1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 17001
+          readinessProbe:
+            initialDelaySeconds: 160
+            periodSeconds: 10
+            timeoutSeconds: 5
+            tcpSocket:
+              port: 17001
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "{{ tt_java_tool_options }}"
+          resources:
+            requests:
+              cpu: "{{ tt_app_req_cpu }}"
+              memory: "{{ tt_app_req_mem }}"
+            limits:
+              cpu: "{{ tt_app_lim_cpu }}"
+              memory: "{{ tt_app_lim_mem }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ts-avatar-service
+  namespace: {{ tt_ns }}
+spec:
+  selector:
+    app: ts-avatar-service
+  ports:
+    - name: http
+      port: 17001
+      targetPort: 17001

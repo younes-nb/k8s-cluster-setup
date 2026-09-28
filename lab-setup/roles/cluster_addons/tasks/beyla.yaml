@@ -1,0 +1,31 @@
+---
+- name: Apply Beyla manifests (RBAC, ConfigMap, DaemonSet, Service)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    template: beyla.yaml.j2
+  register: _beyla_cfg
+
+- name: Restart Beyla on config change
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ monitoring_ns }}"
+    rollout restart daemonset/beyla
+  when: _beyla_cfg is changed
+  changed_when: true
+  failed_when: false
+
+- name: Wait for Beyla DaemonSet to be ready on all nodes
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: DaemonSet
+    name: beyla
+    namespace: "{{ monitoring_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _beyla_ds
+  until: >
+    _beyla_ds.resources | length > 0 and
+    _beyla_ds.resources[0].status.numberReady ==
+    _beyla_ds.resources[0].status.desiredNumberScheduled
+  retries: 60
+  delay: 10
