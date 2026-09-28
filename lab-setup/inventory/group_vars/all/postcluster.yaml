@@ -21,8 +21,8 @@ istio_ns: "istio-system"
 istio_repo_name: "istio"
 istio_repo_url: "https://istio-release.storage.googleapis.com/charts"
 istio_git_repo: "https://github.com/istio/istio.git"
-istio_git_branch: "release-1.28"
-istio_version: "1.28.0"
+istio_git_branch: "release-1.30"
+istio_version: "1.30.5"
 istio_dash_tmp: "/tmp/istio-{{ istio_git_branch }}"
 istio_dashboards_rel_path: "manifests/addons/dashboards"
 istio_grafana_folder: "Istio"
@@ -40,11 +40,11 @@ tempo_retention: "336h"
 tempo_pvc_size: "30Gi"
 tempo_sampling_pct: 10.0
 
-loki_image: "docker.io/grafana/loki:3.4.2"
+loki_image: "docker.io/grafana/loki:3.7.8"
 loki_pvc_size: "10Gi"
 loki_retention: "336h"
 
-mimir_image: "docker.io/grafana/mimir:2.16.0"
+mimir_image: "docker.io/grafana/mimir:3.2.1"
 mimir_pvc_size: "50Gi"
 mimir_retention: "720h"
 mimir_max_series: 1000000
@@ -54,7 +54,7 @@ mimir_ingest_burst: 2000000
 alloy_image: "docker.io/grafana/alloy:v1.20.0"
 alloy_scrape_interval: "10s"
 
-beyla_image: "docker.io/grafana/beyla:3.36.0"
+beyla_image: "docker.io/grafana/beyla:3.37.0"
 
 tt_ns: "train-ticket"
 tt_repo_url: "https://github.com/FudanSELab/train-ticket.git"

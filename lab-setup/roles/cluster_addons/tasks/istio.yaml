@@ -19,6 +19,7 @@
     kubeconfig: "{{ kubeconfig_path }}"
     name: istio-base
     chart_ref: "{{ istio_repo_name }}/base"
+    chart_version: "{{ istio_version }}"
     release_namespace: "{{ istio_ns }}"
     create_namespace: false
     wait: true
@@ -30,6 +31,7 @@
     kubeconfig: "{{ kubeconfig_path }}"
     name: istiod
     chart_ref: "{{ istio_repo_name }}/istiod"
+    chart_version: "{{ istio_version }}"
     release_namespace: "{{ istio_ns }}"
     create_namespace: false
     wait: true

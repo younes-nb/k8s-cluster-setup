@@ -12,6 +12,6 @@ ssh_private_key_src: "{{ lookup('env','HOME') }}/.ssh/id_ed25519"
 ssh_public_key_src: "{{ lookup('env','HOME') }}/.ssh/id_ed25519.pub"
 
 kubespray_git_url: "https://github.com/kubernetes-sigs/kubespray.git"
-kubespray_version: "v2.30.0"
+kubespray_version: "v2.32.0"
 cluster_repo_url: "https://github.com/younes-nb/k8s-cluster-setup.git"
 cluster_repo_version: "master"
