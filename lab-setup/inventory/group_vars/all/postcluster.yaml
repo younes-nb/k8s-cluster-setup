@@ -35,7 +35,7 @@ istio_stats_inclusions:
   - '.*\.no_healthy_upstream$'
   - '.*\.downstream_cx_active$'
 
-tempo_image: "docker.io/grafana/tempo:2.10.8"
+tempo_image: "docker.io/grafana/tempo:3.0.3"
 tempo_retention: "336h"
 tempo_pvc_size: "30Gi"
 tempo_sampling_pct: 10.0

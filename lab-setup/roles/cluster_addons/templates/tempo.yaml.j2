@@ -6,8 +6,9 @@ metadata:
   namespace: {{ monitoring_ns }}
 data:
   tempo.yaml: |
+    stream_over_http_enabled: true
     server:
-      http_listen_port: 3100
+      http_listen_port: 3200
       grpc_listen_port: 9095
     distributor:
       receivers:
@@ -17,23 +18,26 @@ data:
               endpoint: 0.0.0.0:4317
             http:
               endpoint: 0.0.0.0:4318
-    ingester_client:
-      grpc_client_config:
-        max_recv_msg_size: 4194304
-        max_send_msg_size: 4194304
-    compactor:
-      compaction:
-        block_retention: {{ tempo_retention }}
+    query_frontend:
+      mcp_server:
+        enabled: false
     storage:
       trace:
         backend: local
-        local:
-          path: /var/tempo/traces
         wal:
           path: /var/tempo/wal
-        pool:
-          max_workers: 100
-          queue_depth: 10000
+        local:
+          path: /var/tempo/blocks
+    backend_worker:
+      compaction:
+        block_retention: {{ tempo_retention }}
+    overrides:
+      defaults:
+        metrics_generator:
+          processors: ["span-metrics", "service-graphs"]
+          generate_native_histograms: both
+    usage_report:
+      reporting_enabled: false
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -57,7 +61,7 @@ spec:
         image: {{ tempo_image }}
         args: ["-config.file=/conf/tempo.yaml"]
         ports:
-        - {containerPort: 3100, name: http}
+        - {containerPort: 3200, name: http}
         - {containerPort: 9095, name: grpc}
         - {containerPort: 4317, name: otlp-grpc}
         - {containerPort: 4318, name: otlp-http}
@@ -96,6 +100,6 @@ spec:
   selector:
     app: tempo
   ports:
-  - {name: http, port: 3100, targetPort: 3100}
+  - {name: http, port: 3200, targetPort: 3200}
   - {name: grpc-otlp, port: 4317, targetPort: 4317}
   - {name: http-otlp, port: 4318, targetPort: 4318}

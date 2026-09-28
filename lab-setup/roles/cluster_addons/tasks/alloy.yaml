@@ -1,10 +1,24 @@
 ---
-- name: Apply Alloy manifests (RBAC, ConfigMap, Deployment, Service)
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
-    template: alloy.yaml.j2
-  register: _alloy_cfg
+- name: Get node list for Alloy config
+  ansible.builtin.set_fact:
+    _alloy_nodes: "{{ groups['nodes'] | default([]) }}"
+
+- name: Render Alloy manifests locally
+  ansible.builtin.template:
+    src: alloy.yaml.j2
+    dest: /tmp/alloy.yaml
+    mode: "0644"
+  vars:
+    nodes_list: "{{ _alloy_nodes }}"
+  register: _alloy_template
+
+- name: Apply Alloy manifests
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    apply -f /tmp/alloy.yaml -n {{ monitoring_ns }}
+  register: _alloy_apply
+  changed_when: _alloy_template.changed
+  failed_when: false
 
 - name: Wait for Alloy deployment to be available
   kubernetes.core.k8s_info:
@@ -20,13 +34,3 @@
     (_alloy_dep.resources[0].spec.replicas | default(1))
   retries: 30
   delay: 10
-
-
-- name: Restart Alloy on config change
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ monitoring_ns }}"
-    rollout restart deployment/alloy
-  when: _alloy_cfg is changed
-  changed_when: true
-  failed_when: false
