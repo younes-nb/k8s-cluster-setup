@@ -343,40 +343,55 @@
   loop_control:
     label: "{{ item.metadata.name }}"
 
-- name: Create/Update frontend-only Ingress (all traffic via ts-ui-dashboard, {{ ingress_class }}, TLS)
+- name: Create/Update Gateway (all traffic via ts-ui-dashboard, TLS)
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
     definition:
-      apiVersion: networking.k8s.io/v1
-      kind: Ingress
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: Gateway
       metadata:
-        name: train-ticket
+        name: train-ticket-gateway
         namespace: "{{ tt_ns }}"
-        annotations:
-          kubernetes.io/tls-acme: "true"
-          cert-manager.io/cluster-issuer: "{{ cert_issuer_name }}"
-          nginx.ingress.kubernetes.io/ssl-redirect: "true"
-          nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
-          nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-          nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
-          nginx.ingress.kubernetes.io/proxy-body-size: 10m
       spec:
-        ingressClassName: "{{ ingress_class }}"
+        gatewayClassName: "{{ gateway_class }}"
+        listeners:
+        - name: https
+          protocol: HTTPS
+          port: 443
+          tls:
+            mode: Terminate
+            certificateRefs:
+            - kind: Secret
+              name: "{{ tt_tls_secret }}"
+        - name: http
+          protocol: HTTP
+          port: 80
+
+- name: Create/Update HTTPRoute (frontend-only via ts-ui-dashboard)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      metadata:
+        name: train-ticket-route
+        namespace: "{{ tt_ns }}"
+      spec:
+        parentRefs:
+        - name: train-ticket-gateway
+          port: 443
+        hostnames:
+        - "{{ tt_host }}"
         rules:
-          - host: "{{ tt_host }}"
-            http:
-              paths:
-                - path: /
-                  pathType: Prefix
-                  backend:
-                    service:
-                      name: ts-ui-dashboard
-                      port:
-                        number: 8080
-        tls:
-          - hosts: ["{{ tt_host }}"]
-            secretName: "{{ tt_tls_secret }}"
+        - matches:
+          - path:
+              type: Prefix
+              value: /
+          backendRefs:
+          - name: ts-ui-dashboard
+            port: 8080
 
 - name: Wait for TLS certificate to be Ready
   kubernetes.core.k8s_info:

@@ -1,5 +1,5 @@
 kubeconfig_path: /etc/kubernetes/admin.conf
-ingress_class: "nginx"
+gateway_class: "istio"
 storage_class: "local-path"
 
 cert_issuer_name: "letsencrypt-http01"
