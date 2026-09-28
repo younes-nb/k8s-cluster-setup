@@ -64,8 +64,7 @@ data:
     // kubelet/cadvisor: the operator ServiceMonitors authenticate with local
     // files, which this Alloy version cannot honor -- scrape explicitly
     // through the apiserver proxy with the pod serviceaccount.
-    prometheus.scrape "kubelet" {
-      targets = [
+    prometheus.scrape "kubelet" {      targets = [
         {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/master1/proxy/metrics/cadvisor", "node" = "master1"},
         {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/master2/proxy/metrics/cadvisor", "node" = "master2"},
         {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/master3/proxy/metrics/cadvisor", "node" = "master3"},
@@ -80,6 +79,16 @@ data:
       tls_config {
         ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
       }
+    }
+
+    // kube-state-metrics: scraped explicitly by Service DNS (ClusterIP is
+    // stable); the operator path silently yields no samples in this setup.
+    prometheus.scrape "ksm" {
+      targets = [
+        {"__address__" = "prometheus-stack-kube-state-metrics.{{ monitoring_ns }}.svc.cluster.local:8080"},
+      ]
+      forward_to      = [prometheus.remote_write.mimir.receiver]
+      scrape_interval = "{{ alloy_scrape_interval }}"
     }
 
     prometheus.remote_write "mimir" {

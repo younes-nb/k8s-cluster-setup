@@ -96,27 +96,7 @@
     name: "{{ prom_repo_name }}"
     repo_url: "{{ prom_repo_url }}"
 
-- name: Generate htpasswd line for Prometheus basic auth
-  ansible.builtin.command: >
-    htpasswd -nbm {{ prom_basic_user }} {{ prom_basic_pass }}
-  register: _htpasswd_line
-  changed_when: false
-
-- name: Create/Update basic-auth secret for Prometheus ingress
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
-    definition:
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: prometheus-auth
-        namespace: "{{ monitoring_ns }}"
-      type: Opaque
-      stringData:
-        auth: "{{ _htpasswd_line.stdout }}"
-
-- name: Install/upgrade kube-prometheus-stack (Prometheus + Grafana)
+- name: Install/upgrade kube-prometheus-stack (Grafana + operators)
   kubernetes.core.helm:
     kubeconfig: "{{ kubeconfig_path }}"
     name: "{{ prom_release_label }}"
@@ -162,7 +142,7 @@
             access: proxy
 
       alertmanager:
-        enabled: "{{ prometheus_enabled | default(true) }}"
+        enabled: false
 
       kubeControllerManager:
         service: { port: 10257, targetPort: 10257 }
@@ -220,27 +200,3 @@
       kubeDns:
         serviceMonitor:
           enabled: false
-
-- name: Discover orphaned Prometheus TSDB PVCs (helm never deletes them)
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: PersistentVolumeClaim
-    namespace: "{{ monitoring_ns }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-  register: _mon_pvcs
-  when: not (prometheus_enabled | default(true) | bool)
-
-- name: Delete orphaned Prometheus TSDB PVCs (frees {{ prometheus_pvc_size }})
-  kubernetes.core.k8s:
-    state: absent
-    kubeconfig: "{{ kubeconfig_path }}"
-    api_version: v1
-    kind: PersistentVolumeClaim
-    name: "{{ item.metadata.name }}"
-    namespace: "{{ monitoring_ns }}"
-  loop: >-
-    {{ _mon_pvcs.resources | default([])
-       | selectattr('metadata.name', 'match', '^prometheus-.*-db-.*') | list }}
-  loop_control:
-    label: "{{ item.metadata.name }}"
-  when: not (prometheus_enabled | default(true) | bool)

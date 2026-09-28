@@ -36,6 +36,8 @@ data:
     limits:
       compactor_blocks_retention_period: {{ mimir_retention }}
       max_label_names_per_series: 50
+      ingestion_rate: {{ mimir_ingest_rate }}
+      ingestion_burst_size: {{ mimir_ingest_burst }}
       max_global_series_per_user: {{ mimir_max_series }}
 ---
 apiVersion: apps/v1

@@ -15,17 +15,7 @@ grafana_host: "grafana.{{ base_domain }}"
 grafana_timezone: "Asia/Tehran"
 grafana_admin_password: "{{ vault_grafana_admin_password }}"
 grafana_pvc_size: "20Gi"
-prometheus_host: "prometheus.{{ base_domain }}"
-prometheus_retention: "30d"
-prometheus_retention_size: "45GB"
-prometheus_pvc_size: "50Gi"
-prometheus_scrape_interval: "10s"
-prometheus_enabled: false
-prometheus_scrape_timeout: "9s"
-prometheus_evaluation_interval: "10s"
 istio_scrape_interval: "10s"
-prom_basic_user: "{{ vault_prom_basic_user }}"
-prom_basic_pass: "{{ vault_prom_basic_pass }}"
 
 istio_ns: "istio-system"
 istio_repo_name: "istio"
@@ -57,7 +47,9 @@ loki_retention: "336h"
 mimir_image: "docker.io/grafana/mimir:2.16.0"
 mimir_pvc_size: "50Gi"
 mimir_retention: "720h"
-mimir_max_series: 500000
+mimir_max_series: 1000000
+mimir_ingest_rate: 500000
+mimir_ingest_burst: 2000000
 
 alloy_image: "docker.io/grafana/alloy:v1.20.0"
 alloy_scrape_interval: "10s"
