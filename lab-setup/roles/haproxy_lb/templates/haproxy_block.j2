@@ -37,7 +37,7 @@ backend be-ingress-http
         mode tcp
         balance roundrobin
 {% for m in k8s_masters %}
-        server {{ m.name }} {{ m.ip }}:{{ ingress_nodeport_http }} check
+        server {{ m.name }} {{ m.ip }}:{{ gateway_nodeport_http }} check
 {% endfor %}
 
 frontend fe-https
@@ -50,5 +50,5 @@ backend be-ingress-https
         mode tcp
         balance roundrobin
 {% for m in k8s_masters %}
-        server {{ m.name }} {{ m.ip }}:{{ ingress_nodeport_https }} check
+        server {{ m.name }} {{ m.ip }}:{{ gateway_nodeport_https }} check
 {% endfor %}

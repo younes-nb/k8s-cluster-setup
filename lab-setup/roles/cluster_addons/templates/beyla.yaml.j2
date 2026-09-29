@@ -83,8 +83,6 @@ spec:
             value: "http://alloy.{{ monitoring_ns }}.svc.cluster.local:4317"
         ports:
         - {containerPort: 8080, name: metrics}
-        - {containerPort: 4317, name: otlp-grpc}
-        - {containerPort: 4318, name: otlp-http}
         volumeMounts:
         - {name: conf, mountPath: /config}
         - {name: debugfs, mountPath: /sys/kernel/debug, readOnly: true}

@@ -49,7 +49,7 @@
       url: "http://loki.{{ monitoring_ns }}.svc.cluster.local:3100"
     - name: Tempo
       type: tempo
-      url: "http://tempo.{{ monitoring_ns }}.svc.cluster.local:3100"
+      url: "http://tempo.{{ monitoring_ns }}.svc.cluster.local:3200"
   loop_control:
     label: "{{ item.name }}"
   when: >-

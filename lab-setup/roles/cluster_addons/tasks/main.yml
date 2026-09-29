@@ -1,4 +1,7 @@
 ---
+- import_tasks: cert_manager.yaml
+  tags: [cert-manager]
+
 - import_tasks: cert_issuer.yaml
   tags: [cert-issuer]
 

@@ -62,35 +62,6 @@
       metadata:
         name: "{{ monitoring_ns }}"
 
-- name: Read etcd certs from node
-  ansible.builtin.slurp:
-    src: "{{ item }}"
-  register: etcd_certs
-  loop:
-    - /etc/kubernetes/pki/etcd/ca.crt
-    - /etc/kubernetes/pki/apiserver-etcd-client.crt
-    - /etc/kubernetes/pki/apiserver-etcd-client.key
-
-- name: Build etcd secret data map (base64 as required by k8s)
-  set_fact:
-    etcd_secret_data:
-      etcd-ca: "{{ (etcd_certs.results[0].content) }}"
-      etcd-client: "{{ (etcd_certs.results[1].content) }}"
-      etcd-client-key: "{{ (etcd_certs.results[2].content) }}"
-
-- name: Create/ensure Secret {{ monitoring_ns }}/etcd-client-cert
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
-    definition:
-      apiVersion: v1
-      kind: Secret
-      metadata:
-        name: etcd-client-cert
-        namespace: "{{ monitoring_ns }}"
-      type: Opaque
-      data: "{{ etcd_secret_data }}"
-
 - name: Add Prometheus Community Helm repo
   kubernetes.core.helm_repository:
     name: "{{ prom_repo_name }}"
@@ -108,6 +79,9 @@
       grafana:
         defaultDashboardsTimezone: "{{ grafana_timezone }}"
         adminPassword: "{{ grafana_admin_password }}"
+        sidecar:
+          datasources:
+            defaultDatasourceEnabled: false
         ingress:
           enabled: true
           annotations:
@@ -138,7 +112,7 @@
             access: proxy
           - name: Tempo
             type: tempo
-            url: "http://tempo.{{ monitoring_ns }}.svc.cluster.local:3100"
+            url: "http://tempo.{{ monitoring_ns }}.svc.cluster.local:3200"
             access: proxy
 
       alertmanager:
@@ -146,52 +120,31 @@
 
       kubeControllerManager:
         service: { port: 10257, targetPort: 10257 }
-        serviceMonitor: { https: true, insecureSkipVerify: true }
+        serviceMonitor: { enabled: false }
 
       kubeEtcd:
-        enabled: true
-        service:
-          enabled: true
-          port: 2381
-          targetPort: 2381
-        serviceMonitor:
-          enabled: true
-          scheme: http
-          insecureSkipVerify: false
-          serverName: localhost
-          caFile: /etc/prometheus/secrets/etcd-client-cert/etcd-ca
-          certFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client
-          keyFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client-key
+        enabled: false
 
       kubeScheduler:
         service: { port: 10259, targetPort: 10259 }
-        serviceMonitor: { https: true, insecureSkipVerify: true }
+        serviceMonitor: { enabled: false }
 
       kubeProxy:
         service: { port: 10249, targetPort: 10249 }
+        serviceMonitor: { enabled: false }
 
       kubelet:
         enabled: true
         namespace: kube-system
+        serviceMonitor:
+          enabled: false
+
+      nodeExporter:
+        enabled: false
 
       prometheus:
         enabled: false
-      kubelet:
-        serviceMonitor:
-          enabled: false
       kubeApiServer:
-        serviceMonitor:
-          enabled: false
-      kubeControllerManager:
-        serviceMonitor:
-          enabled: false
-      kubeScheduler:
-        serviceMonitor:
-          enabled: false
-      kubeEtcd:
-        serviceMonitor:
-          enabled: false
-      kubeProxy:
         serviceMonitor:
           enabled: false
       coreDns:

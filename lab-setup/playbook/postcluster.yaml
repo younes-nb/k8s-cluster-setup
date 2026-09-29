@@ -10,6 +10,7 @@
 
     - role: cluster_addons
       tags:
+        - cert-manager
         - cert-issuer
         - monitoring
         - istio

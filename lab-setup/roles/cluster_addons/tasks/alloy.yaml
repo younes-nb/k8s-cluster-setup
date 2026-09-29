@@ -18,7 +18,6 @@
     apply -f /tmp/alloy.yaml -n {{ monitoring_ns }}
   register: _alloy_apply
   changed_when: _alloy_template.changed
-  failed_when: false
 
 - name: Wait for Alloy deployment to be available
   kubernetes.core.k8s_info:

@@ -387,11 +387,49 @@
         rules:
         - matches:
           - path:
-              type: Prefix
+              type: PathPrefix
               value: /
           backendRefs:
           - name: ts-ui-dashboard
             port: 8080
+
+- name: Pin Gateway Service NodePorts to lb forwarding ports
+  ansible.builtin.shell: |
+    kubectl --kubeconfig="{{ kubeconfig_path }}" -n "{{ tt_ns }}" get svc train-ticket-gateway-istio -o json | python3 -c "
+    import json,subprocess,sys
+    svc = json.load(sys.stdin)
+    want = {80: {{ gateway_nodeport_http }}, 443: {{ gateway_nodeport_https }}}
+    ops = []
+    for i, p in enumerate(svc['spec']['ports']):
+        if p['port'] in want and p.get('nodePort') != want[p['port']]:
+            ops.append({'op': 'replace', 'path': f\"/spec/ports/{i}/nodePort\", 'value': want[p['port']]})
+    if ops:
+        subprocess.run(['kubectl', '--kubeconfig={{ kubeconfig_path }}', '-n', '{{ tt_ns }}', 'patch', 'svc', 'train-ticket-gateway-istio', '--type=json', '-p', json.dumps(ops)], check=True)
+        print('patched')
+    "
+  args:
+    executable: /bin/bash
+  register: _gw_nodeports
+  changed_when: "'patched' in _gw_nodeports.stdout"
+  failed_when: false
+
+- name: Create/Update Certificate for Gateway TLS listener
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: "{{ tt_tls_secret }}"
+        namespace: "{{ tt_ns }}"
+      spec:
+        secretName: "{{ tt_tls_secret }}"
+        issuerRef:
+          name: "{{ cert_issuer_name }}"
+          kind: ClusterIssuer
+        dnsNames:
+          - "{{ tt_host }}"
 
 - name: Wait for TLS certificate to be Ready
   kubernetes.core.k8s_info:

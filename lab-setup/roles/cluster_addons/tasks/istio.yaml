@@ -56,30 +56,20 @@
         serviceMonitor:
           enabled: true
 
-- name: Install Istio Gateway API CRDs
-  ansible.builtin.shell: |
-    kubectl --kubeconfig="{{ kubeconfig_path }}" apply -f https://raw.githubusercontent.com/kubernetes-sigs/gateway-api/v1.2.1/manifests/standard/standard-install.yaml
+- name: Install Gateway API CRDs
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    apply -f {{ gateway_api_crds_url }}
   changed_when: true
-  failed_when: false
 
 - name: Wait for Gateway API CRDs to be established
-  ansible.builtin.shell: |
-    kubectl --kubeconfig="{{ kubeconfig_path }}" wait --for=condition=established --timeout=120s crds gateways.gateway.networking.k8s.io httproutes.routes.gateway.networking.k8s.io tcproutes.routes.gateway.networking.k8s.io udproutes.routes.gateway.networking.k8s.io
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    wait --for=condition=established --timeout=120s
+    crd/gateways.gateway.networking.k8s.io
+    crd/httproutes.gateway.networking.k8s.io
+    crd/gatewayclasses.gateway.networking.k8s.io
   changed_when: false
-  failed_when: false
-
-- name: Install Istio Gateway API controller
-  kubernetes.core.helm:
-    kubeconfig: "{{ kubeconfig_path }}"
-    name: istio-gateway-api
-    chart_ref: "{{ istio_repo_name }}/gateway-api"
-    chart_version: "{{ istio_version }}"
-    release_namespace: "{{ istio_ns }}"
-    create_namespace: false
-    wait: true
-    values:
-      gatewayController:
-        gatewayClassName: istio
 
 - name: Apply Istio control-plane ServiceMonitor
   kubernetes.core.k8s:

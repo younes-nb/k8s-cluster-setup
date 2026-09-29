@@ -1,5 +1,10 @@
 kubeconfig_path: /etc/kubernetes/admin.conf
 gateway_class: "istio"
+gateway_nodeport_http: 30080
+gateway_nodeport_https: 30081
+gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml"
+ingress_class: "istio"
+base_domain: "younesnb.linkpc.net"
 storage_class: "local-path"
 
 cert_issuer_name: "letsencrypt-http01"
