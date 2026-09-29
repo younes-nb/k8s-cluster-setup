@@ -1,6 +1,3 @@
-# {{ ansible_managed }}
-# CCE-80195-1
-
 daily
 {% if ansible_distribution == 'Ubuntu' %}
 su root syslog
@@ -15,3 +12,4 @@ uncompresscmd /usr/bin/unxz
 compressext .xz
 
 include /etc/logrotate.d
+

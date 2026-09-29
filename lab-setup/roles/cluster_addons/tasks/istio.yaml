@@ -208,3 +208,4 @@
   ansible.builtin.file:
     path: "{{ istio_dash_tmp }}"
     state: absent
+

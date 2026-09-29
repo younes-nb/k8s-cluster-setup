@@ -1,11 +1,3 @@
-"""Inject spec.selector into upstream 0.0.4 manifests that omit it.
-
-The FudanSELab k8s-deployment yamls predate mandatory selectors; modern
-apiserver rejects them. Selector = pod template labels (all services use
-`app: <name>`), which is exactly what the running cluster carries.
-Pure function of the inputs: re-runs produce byte-identical output.
-Usage: inject_selectors.py <src.yml>... <out_dir>
-"""
 import re
 import sys
 import os
@@ -48,3 +40,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

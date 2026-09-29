@@ -153,5 +153,5 @@
     owner: root
     group: root
     content: |
-      #!/bin/sh
       systemctl reload haproxy || systemctl restart haproxy
+

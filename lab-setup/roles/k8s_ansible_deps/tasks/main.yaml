@@ -13,3 +13,4 @@
       - kubernetes
       - openshift
     executable: pip3
+

@@ -153,3 +153,4 @@
       kubeDns:
         serviceMonitor:
           enabled: false
+

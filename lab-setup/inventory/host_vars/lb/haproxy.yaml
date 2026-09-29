@@ -19,3 +19,4 @@ k8s_masters:
   - { name: "master1", ip: "{{ cloudlab_ips.master1 }}" }
   - { name: "master2", ip: "{{ cloudlab_ips.master2 }}" }
   - { name: "master3", ip: "{{ cloudlab_ips.master3 }}" }
+

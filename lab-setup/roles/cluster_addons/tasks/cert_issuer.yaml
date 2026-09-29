@@ -27,3 +27,4 @@
             - http01:
                 ingress:
                   class: "{{ ingress_class }}"
+
