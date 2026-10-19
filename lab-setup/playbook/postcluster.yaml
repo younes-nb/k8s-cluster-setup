@@ -8,16 +8,9 @@
     - role: k8s_ansible_deps
       tags: [deps]
 
+    # NOTE: do NOT tag the role itself — Ansible adds role tags to every task
+    # in the role, which would make every --tags X run the entire role.
+    # Targeted add-on runs select tags defined per task file in the role's
+    # tasks/main.yml (import_tasks ... tags: [alloy] etc.).
     - role: cluster_addons
-      tags:
-        - cert-manager
-        - cert-issuer
-        - monitoring
-        - istio
-        - tempo
-        - loki
-        - mimir
-        - alloy
-        - beyla
-        - train-ticket
 

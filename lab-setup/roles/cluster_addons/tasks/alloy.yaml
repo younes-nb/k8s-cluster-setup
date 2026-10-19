@@ -19,6 +19,15 @@
   register: _alloy_apply
   changed_when: _alloy_template.changed
 
+- name: Restart Alloy on config change (running pods keep old config otherwise)
+  ansible.builtin.command: >
+    kubectl --kubeconfig="{{ kubeconfig_path }}"
+    -n "{{ monitoring_ns }}"
+    rollout restart deployment/alloy
+  when: _alloy_apply is changed
+  changed_when: true
+  failed_when: false
+
 - name: Wait for Alloy deployment to be available
   kubernetes.core.k8s_info:
     api_version: apps/v1

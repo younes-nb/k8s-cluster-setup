@@ -95,6 +95,15 @@ data:
       }
     }
 
+    // OTLP -> Prometheus bridge: Beyla exports RED metrics over OTLP gRPC;
+    // Alloy's receiver only serves the signals that have consumers, so an
+    // empty metrics output makes OTLP metrics fail with
+    // "Unimplemented: unknown service ...MetricsService". Convert and push
+    // them into the same remote_write path as the scraped metrics.
+    otelcol.exporter.prometheus "beyla" {
+      forward_to = [prometheus.remote_write.mimir.receiver]
+    }
+
     discovery.kubernetes "pods" {
       role = "pod"
     }
@@ -116,7 +125,7 @@ data:
         endpoint = "0.0.0.0:4318"
       }
       output {
-        metrics = []
+        metrics = [otelcol.exporter.prometheus.beyla.input]
         logs = []
         traces = [otelcol.processor.batch.out.input]
       }
@@ -204,3 +213,8 @@ spec:
     app: alloy
   ports:
   - {name: http, port: 12345, targetPort: 12345}
+  # OTLP ingestion (all traffic opts) — Beyla exports here; kube-proxy only
+  # NATs listed service ports, so OTLP must be declared on the Service even
+  # though the Alloy container already listens on 0.0.0.0:4317/4318.
+  - {name: otlp-grpc, port: 4317, targetPort: 4317}
+  - {name: otlp-http, port: 4318, targetPort: 4318}

@@ -42,6 +42,14 @@ data:
   beyla-config.yml: |
     routes:
       unmatched: heuristic
+    discovery:
+      instrument:
+        # instrument only the Train-Ticket application services; the
+        # monitoring/kube-system/cert-manager namespaces are already in
+        # Beyla's default exclusion list, and services exporting their own
+        # OTel telemetry (e.g. Istio) are auto-skipped by
+        # exclude_otel_instrumented_services (default true).
+        - k8s_namespace: train-ticket
 
 ---
 apiVersion: apps/v1
@@ -63,6 +71,11 @@ spec:
       serviceAccountName: beyla
       hostNetwork: true
       hostPID: true
+      # hostNetwork pods must use ClusterFirstWithHostNet for cluster DNS
+      # (plain ClusterFirst is ignored for host-network pods, so
+      # *.monitoring.svc.cluster.local names would fail to resolve and the
+      # OTLP exporter to Alloy errors with "produced zero addresses").
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: beyla
         image: {{ beyla_image }}
@@ -77,8 +90,13 @@ spec:
             value: "8080"
           - name: BEYLA_KUBE_METADATA_ENABLE
             value: "true"
-          - name: BEYLA_OPEN_PORT
-            value: "0"
+          # Beyla 3.x REQUIRES a discovery section (or network metrics config)
+          # to start; the legacy BEYLA_OPEN_PORT env used to stand in for that
+          # existence check, but as a selector open_ports "0" matches nothing
+          # (no process listens on port 0), so nothing was ever instrumented.
+          # The real selection now lives in beyla-config.yml (mounted below).
+          - name: BEYLA_CONFIG_PATH
+            value: "/config/beyla-config.yml"
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: "http://alloy.{{ monitoring_ns }}.svc.cluster.local:4317"
         ports:
