@@ -71,7 +71,11 @@ tt_max_replicas: 10
 tt_cpu_avg_utilization: 80
 tt_host: "train-ticket.{{ base_domain }}"
 tt_tls_secret: "trainticket-tls"
-tt_wait_retries: 60
+# Per-deployment readiness budget. 60 x 5s (5 min) was sometimes insufficient
+# on fresh clusters: the first services to start pay all the image-pull cost,
+# and app warmup (Spring Boot + DB connect) can exceed 5 min even after the
+# image is cached — the pod then converges shortly after the wait gave up.
+tt_wait_retries: 180
 tt_wait_delay: 5
 tt_mongo_image: "mongo:4.4"
 tt_app_req_cpu: "500m"

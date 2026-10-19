@@ -1,4 +1,176 @@
 ---
+# A leftover manifest-based cert-manager (e.g. installed during the kubespray
+# cluster build while its own cert_manager addon was still enabled in the
+# overlay) has no Helm ownership metadata and makes the Helm install below
+# fail with "invalid ownership metadata". Leftovers can be namespaced
+# (namespace, ServiceAccounts, Deployments), cluster-scoped (ClusterRoles,
+# ClusterRoleBindings, webhook configs, APIService, CRDs), or runtime-created
+# leader-election Role/RoleBindings in kube-system. When cert-manager
+# resources exist but no Helm release owns them, all of them are removed so
+# the chart can take over from a clean slate.
+- name: Check whether a cert-manager Helm release exists
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/helm
+      - list
+      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - --namespace
+      - cert-manager
+      - --output
+      - json
+  register: _cm_helm_list
+  changed_when: false
+  failed_when: false
+
+- name: Probe for leftover namespaced cert-manager resources
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/kubectl      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - --namespace
+      - cert-manager
+      - get
+      - serviceaccount
+      - cert-manager-cainjector
+  register: _cm_sa_probe
+  changed_when: false
+  failed_when: false
+
+- name: List leftover non-Helm-owned cert-manager cluster-scoped resources
+  ansible.builtin.shell: |
+    set -o pipefail
+    /usr/local/bin/kubectl --kubeconfig="{{ kubeconfig_path }}" \
+      get clusterrole,clusterrolebinding,validatingwebhookconfiguration,mutatingwebhookconfiguration,apiservice \
+      --selector 'app.kubernetes.io/managed-by!=Helm' \
+      -o name \
+      | grep -F 'cert-manager' || true
+  args:
+    executable: /bin/bash
+  register: _cm_cluster_probe
+  changed_when: false
+
+- name: List leftover runtime cert-manager leader-election RBAC (kube-system)
+  ansible.builtin.shell: |
+    set -o pipefail
+    /usr/local/bin/kubectl --kubeconfig="{{ kubeconfig_path }}" \
+      --namespace kube-system \
+      get role,rolebinding -o name \
+      | grep -F 'cert-manager' || true
+  args:
+    executable: /bin/bash
+  register: _cm_ks_probe
+  changed_when: false
+
+- name: Flag leftover cert-manager resources
+  ansible.builtin.set_fact:
+    _cm_leftover_sa: >-
+      {{ (_cm_sa_probe.rc | default(1)) == 0
+         and (_cm_sa_probe.stdout | default('') | trim | length) > 0 }}
+    _cm_helm_release: >-
+      {{ (_cm_helm_list.rc | default(1)) == 0
+         and (_cm_helm_list.stdout | from_json
+              | selectattr('name', 'equalto', 'cert-manager') | list | length) > 0 }}
+    _cm_cluster_leftovers: "{{ _cm_cluster_probe.stdout_lines | default([]) }}"
+    _cm_cleanup_needed: >-
+      {{ not ((_cm_helm_list.rc | default(1)) == 0
+              and (_cm_helm_list.stdout | from_json
+                   | selectattr('name', 'equalto', 'cert-manager') | list | length) > 0)
+         and (((_cm_sa_probe.rc | default(1)) == 0
+               and (_cm_sa_probe.stdout | default('') | trim | length) > 0)
+              or (_cm_cluster_probe.stdout_lines | default([]) | length) > 0
+              or (_cm_ks_probe.stdout_lines | default([]) | length) > 0) }}
+
+- name: Remove leftover cert-manager namespace (not owned by a Helm release)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Namespace
+    name: cert-manager
+    state: absent
+    wait: true
+  when: _cm_cleanup_needed | bool
+
+- name: Remove leftover cert-manager CRDs (the chart re-creates them)
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/kubectl
+      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - delete
+      - crd
+      - certificaterequests.cert-manager.io
+      - certificates.cert-manager.io
+      - challenges.acme.cert-manager.io
+      - clusterissuers.cert-manager.io
+      - issuers.cert-manager.io
+      - orders.acme.cert-manager.io
+      - --ignore-not-found
+      - --wait
+  when: _cm_cleanup_needed | bool
+
+- name: Remove leftover cluster-scoped cert-manager resources
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/kubectl
+      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - delete
+      - "{{ item }}"
+      - --ignore-not-found
+      - --wait
+  loop: "{{ _cm_cluster_leftovers }}"
+  loop_control:
+    label: "{{ item }}"
+  when: _cm_cleanup_needed | bool
+
+- name: Remove leftover cert-manager leader-election RBAC (kube-system)
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/kubectl
+      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - --namespace
+      - kube-system
+      - delete
+      - "{{ item }}"
+      - --ignore-not-found
+      - --wait
+  loop: "{{ _cm_ks_probe.stdout_lines | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when: _cm_cleanup_needed | bool
+
+# cert-manager is installed with enableGatewayAPI: true, which requires the
+# Gateway API CRDs to exist before the controller starts (otherwise it exits
+# with "the Gateway API CRDs do not seem to be present"). The istio tag
+# installs the same CRDs again (kubectl apply is idempotent), but cert-manager
+# must be able to start first.
+- name: Ensure Gateway API CRDs are present before cert-manager start
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - apply
+      - -f
+      - "{{ gateway_api_crds_url }}"
+  changed_when: true
+
+- name: Wait for Gateway API CRDs to be established
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - wait
+      - --for=condition=established
+      - --timeout=120s
+      - crd/gateways.gateway.networking.k8s.io
+      - crd/httproutes.gateway.networking.k8s.io
+      - crd/gatewayclasses.gateway.networking.k8s.io
+  changed_when: false
+
 - name: Add cert-manager Helm repo
   kubernetes.core.helm_repository:
     name: cert-manager
@@ -27,6 +199,32 @@
         apiVersion: controller.config.cert-manager.io/v1alpha1
         kind: ControllerConfiguration
         enableGatewayAPI: true
+
+- name: Wait for the cert-manager controller deployment to become ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: cert-manager
+    namespace: cert-manager
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: cert_manager_deploy_probe
+
+- name: Restart the cert-manager controller if it is not ready (pick up CRDs)
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubeconfig_path }}"
+      - --namespace
+      - cert-manager
+      - rollout
+      - restart
+      - deployment/cert-manager
+  when: >
+    not ( cert_manager_deploy_probe.resources | default([]) | length > 0
+          and (cert_manager_deploy_probe.resources[0].status.readyReplicas | default(0)) >=
+              (cert_manager_deploy_probe.resources[0].spec.replicas | default(1)) )
+  changed_when: true
 
 - name: Wait for cert-manager to be ready
   kubernetes.core.k8s_info:

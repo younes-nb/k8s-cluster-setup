@@ -108,8 +108,12 @@ ingress_alb_enabled: false
 # If logging is desired, set to true.
 # alb_ingress_aws_debug: "false"
 
-# Cert manager deployment
-cert_manager_enabled: true
+# Cert manager deployment.
+# NOTE: keep DISABLED — postcluster (lab-setup cluster_addons) installs
+# cert-manager v1.16.3 via Helm instead. Kubespray's manifest-based install
+# here leaves resources without Helm ownership metadata, which makes the
+# later Helm install fail with "invalid ownership metadata".
+cert_manager_enabled: false
 cert_manager_namespace: "cert-manager"
 # cert_manager_tolerations:
 #   - key: node-role.kubernetes.io/control-plane
