@@ -17,6 +17,8 @@ KUBESPRAY_DIR="kubespray"
 KS_DIR_ABS="$(cd "$KUBESPRAY_DIR" && pwd)"
 KS_VENV="${KS_DIR_ABS}/.venv"
 KS_REQUIREMENTS="${KS_DIR_ABS}/requirements.txt"
+# kubespray/requirements.txt pins ansible==12.3.0, which needs Python 3.12
+KS_PYTHON="${KS_PYTHON:-python3.12}"
 
 GET_KUBECONFIG="./get-kubeconfig.sh"
 KUBECONFIG_DEST="admin.conf"
@@ -28,6 +30,17 @@ ANSIBLE_VAULT_FLAG=${ANSIBLE_VAULT_PASSWORD_FILE:+--vault-password-file "$ANSIBL
 ok()   { echo -e "\033[1;32m✔ $*\033[0m"; }
 info() { echo -e "\033[1;34mℹ $*\033[0m"; }
 err()  { echo -e "\033[1;31m✘ $*\033[0m"; }
+
+# True if <interpreter> is exactly Python 3.12 (the pinned kubespray
+# interpreter; ansible 12.x needs >= 3.11, this repo pins 3.12).
+ks_python_ok() {
+  "$1" -c 'import sys; exit(0 if sys.version_info[:2] == (3, 12) else 1)' >/dev/null 2>&1
+}
+
+# True if the kubespray venv exists and was built with Python 3.12.
+ks_venv_ok() {
+  [ -x "${KS_VENV}/bin/python" ] && ks_python_ok "${KS_VENV}/bin/python"
+}
 
 step_banner() {
   echo -e "\n\033[1;36m==> $*\033[0m"
@@ -181,9 +194,26 @@ if should_run kubespray; then
   step_banner "Deploying cluster with Kubespray"
   pushd "$KS_DIR_ABS" >/dev/null
 
-  if [[ ! -d "$KS_VENV" ]]; then
-    info "Creating Kubespray virtualenv at $KS_VENV"
-    python3 -m venv "$KS_VENV"
+  # The kubespray venv must be built with the pinned Python 3.12 (ansible
+  # 12.x needs >= 3.11). A stale venv (e.g. created with the system Python
+  # 3.10, whose pip cannot resolve ansible==12.3.0) is rebuilt in place.
+  if command -v "$KS_PYTHON" >/dev/null 2>&1 && ks_python_ok "$KS_PYTHON"; then
+    KS_PY="$KS_PYTHON"
+  else
+    err "Kubespray requires Python 3.12, but '$KS_PYTHON' was not found (or is another version)."
+    err "Ubuntu 22.04: sudo add-apt-repository -y ppa:deadsnakes/ppa \\"
+    err "        && sudo apt-get update && sudo apt-get install -y python3.12 python3.12-venv"
+    err "Ubuntu 24.04+: sudo apt-get install -y python3.12 python3.12-venv"
+    exit 1
+  fi
+
+  if ! ks_venv_ok; then
+    info "Creating Kubespray virtualenv at $KS_VENV (with $KS_PY)"
+    if ! "$KS_PY" -m venv --clear "$KS_VENV"; then
+      err "venv creation failed with $KS_PY. If the error mentions ensurepip,"
+      err "install the matching venv package first, e.g. apt install ${KS_PY}-venv."
+      exit 1
+    fi
   fi
 
   source "$KS_VENV/bin/activate"

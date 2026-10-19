@@ -20,6 +20,23 @@
     state: present
   when: ansible_facts.os_family == "Debian"
 
+# kubespray is pinned to Python 3.12 in run-cluster-setup.sh (ansible==12.3.0
+# needs >= 3.11); Jammy only ships Python 3.10, so provision 3.12 via deadsnakes.
+# A non-jammy Ubuntu (>= 24.04) already has native python3.12 packages.
+- name: Enable deadsnakes PPA (Jammy lacks python3.12)
+  ansible.builtin.command: add-apt-repository -y ppa:deadsnakes/ppa
+  when: ansible_facts.os_family == "Debian" and ansible_facts.distribution_release == "jammy"
+  changed_when: true
+
+- name: Install pinned Python 3.12 for kubespray (runner)
+  ansible.builtin.apt:
+    update_cache: true
+    name:
+      - python3.12
+      - python3.12-venv
+    state: present
+  when: ansible_facts.os_family == "Debian"
+
 - name: Install base packages (RHEL/Fedora)
   ansible.builtin.package:
     name:
