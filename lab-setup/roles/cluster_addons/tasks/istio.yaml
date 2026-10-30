@@ -95,8 +95,10 @@
         endpoints:
           - port: http-monitoring
             interval: "{{ istio_scrape_interval }}"
+            scrapeTimeout: "{{ istio_scrape_interval }}"
           - port: http-policy-monitoring
             interval: "{{ istio_scrape_interval }}"
+            scrapeTimeout: "{{ istio_scrape_interval }}"
 
 - name: Apply Istio data-plane ServiceMonitor
   kubernetes.core.k8s:
@@ -122,6 +124,7 @@
           - path: /stats/prometheus
             targetPort: http-envoy-prom
             interval: "{{ istio_scrape_interval }}"
+            scrapeTimeout: "{{ istio_scrape_interval }}"
             relabelings:
               - sourceLabels: [__meta_kubernetes_pod_container_port_name]
                 action: keep

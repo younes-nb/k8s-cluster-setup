@@ -20,7 +20,7 @@ grafana_host: "grafana.{{ base_domain }}"
 grafana_timezone: "Asia/Tehran"
 grafana_admin_password: "{{ vault_grafana_admin_password }}"
 grafana_pvc_size: "20Gi"
-istio_scrape_interval: "10s"
+istio_scrape_interval: "5s"
 
 istio_ns: "istio-system"
 istio_repo_name: "istio"
@@ -41,23 +41,27 @@ istio_stats_inclusions:
   - '.*\.downstream_cx_active$'
 
 tempo_image: "docker.io/grafana/tempo:3.0.3"
-tempo_retention: "336h"
-tempo_pvc_size: "30Gi"
+# Disk-pressure incident 2026-10-21: 336h retention with ~3 GB/h of OTLP at the
+# 5s cadence filled worker3's tempo-data PV to 40G and triggered DiskPressure
+# evictions. NOTE: storage-class local-path does NOT enforce PVC sizes — the
+# retention window below is the real bound (values sized to measured ingest).
+tempo_retention: "4h"   # ~= 12-14G resident on this 63G disk
+tempo_pvc_size: "15Gi"
 tempo_sampling_pct: 10.0
 
 loki_image: "docker.io/grafana/loki:3.7.8"
-loki_pvc_size: "10Gi"
-loki_retention: "336h"
+loki_pvc_size: "10Gi"   # existing PV — do NOT resize (local-path rejects expansion); retention is the real bound
+loki_retention: "6h"    # ~= 15G resident (was 336h -> 33G pile on master1)
 
 mimir_image: "docker.io/grafana/mimir:3.2.1"
 mimir_pvc_size: "50Gi"
-mimir_retention: "720h"
+mimir_retention: "18h"  # analytic window for post-run truth queries (was 720h -> unbounded, then 48h; disk-pressure 2026-10-23: 5s-cadence istio ingest ~16G/24h ~= 32G resident at 48h -> master3 hit 84% + taint; 18h ~= 12G resident)
 mimir_max_series: 1000000
 mimir_ingest_rate: 500000
 mimir_ingest_burst: 2000000
 
 alloy_image: "docker.io/grafana/alloy:v1.20.0"
-alloy_scrape_interval: "10s"
+alloy_scrape_interval: "5s"
 
 beyla_image: "docker.io/grafana/beyla:3.37.0"
 

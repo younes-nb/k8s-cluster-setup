@@ -61,6 +61,7 @@ data:
       ]
       forward_to = [prometheus.remote_write.mimir.receiver]
       scrape_interval = "{{ alloy_scrape_interval }}"
+      scrape_timeout = "{{ alloy_scrape_interval }}"
       scheme = "https"
       bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
       tls_config {
@@ -74,6 +75,7 @@ data:
       ]
       forward_to = [prometheus.remote_write.mimir.receiver]
       scrape_interval = "{{ alloy_scrape_interval }}"
+      scrape_timeout = "{{ alloy_scrape_interval }}"
     }
 
     prometheus.exporter.unix "node_exporter" {
@@ -87,6 +89,7 @@ data:
       targets = prometheus.exporter.unix.node_exporter.targets
       forward_to = [prometheus.remote_write.mimir.receiver]
       scrape_interval = "{{ alloy_scrape_interval }}"
+      scrape_timeout = "{{ alloy_scrape_interval }}"
     }
 
     prometheus.remote_write "mimir" {
@@ -183,8 +186,8 @@ spec:
         - {name: sys, mountPath: /host/sys, readOnly: true}
         - {name: host-root, mountPath: /host, readOnly: true}
         resources:
-          requests: {cpu: "200m", memory: "512Mi"}
-          limits: {cpu: "2000m", memory: "2Gi"}
+          requests: {cpu: "200m", memory: "2Gi"}
+          limits: {cpu: "2000m", memory: "8Gi"}  # twice OOMKilled mid-PBScaler-run: 855 tt pods (paper scale-outs) double the per-pod stream/scrape load; 4Gi also OOMKilled at 07:37Z
         readinessProbe:
           httpGet: {path: /-/ready, port: 12345}
           initialDelaySeconds: 20
