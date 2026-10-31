@@ -32,10 +32,14 @@
 
     - name: Build derived lists
       ansible.builtin.set_fact:
-        lb_ip: "{{ cloudlab_ips.lb }}"
+        loadgen_ip: "{{ cloudlab_ips.loadgen }}"
         master_ips: "{{ kube_control_plane_hosts | map('extract', cloudlab_ips) | list }}"
         worker_ips: "{{ kube_worker_hosts | map('extract', cloudlab_ips) | list }}"
-        cluster_trusted_ips: "{{ [cloudlab_ips.lb] + (kube_control_plane_hosts | map('extract', cloudlab_ips) | list) + (kube_worker_hosts | map('extract', cloudlab_ips) | list) }}"
+        cluster_trusted_ips: "{{ [cloudlab_ips.loadgen] + (kube_control_plane_hosts | map('extract', cloudlab_ips) | list) + (kube_worker_hosts | map('extract', cloudlab_ips) | list) }}"
+
+    - name: Include private IPs from topology (link-1 LAN)
+      ansible.builtin.set_fact:
+        cloudlab_private_ips: "{{ cloudlab_private_ips | default({}) }}"
 
     - name: Write generated vars into lab-setup and kubespray-overlay
       ansible.builtin.copy:
@@ -44,7 +48,8 @@
         content: |
           # GENERATED FILE - do not edit
           cloudlab_ips: {{ cloudlab_ips }}
-          lb_ip: "{{ lb_ip }}"
+          cloudlab_private_ips: {{ cloudlab_private_ips }}
+          loadgen_ip: "{{ loadgen_ip }}"
           master_ips: {{ master_ips }}
           worker_ips: {{ worker_ips }}
           cluster_trusted_ips: {{ cluster_trusted_ips }}

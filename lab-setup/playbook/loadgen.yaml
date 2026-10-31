@@ -1,0 +1,8 @@
+---
+- name: Configure load generator node
+  hosts: loadgen
+  become: true
+  gather_facts: yes
+
+  roles:
+    - loadgen

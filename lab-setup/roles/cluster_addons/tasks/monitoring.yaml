@@ -82,17 +82,13 @@
         sidecar:
           datasources:
             defaultDatasourceEnabled: false
+        # Ingress disabled — no external LB; access via NodePort on private network
         ingress:
-          enabled: true
-          annotations:
-            cert-manager.io/cluster-issuer: "{{ cert_issuer_name }}"
-            kubernetes.io/tls-acme: "true"
-            nginx.ingress.kubernetes.io/ssl-redirect: "true"
-          hosts: ["{{ grafana_host }}"]
-          ingressClassName: "{{ ingress_class }}"
-          tls:
-            - secretName: grafana-general-tls
-              hosts: ["{{ grafana_host }}"]
+          enabled: false
+        service:
+          type: NodePort
+          port: 3000
+          nodePort: 30030
         persistence:
           type: pvc
           enabled: true

@@ -55,7 +55,7 @@ data:
 
     prometheus.scrape "kubelet" {
       targets = [
-        {% for node in groups['nodes'] | difference(['lb']) %}
+        {% for node in groups['nodes'] | difference(['loadgen']) %}
         {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/{{ node }}/proxy/metrics/cadvisor", "node" = "{{ node }}"},
         {% endfor %}
       ]

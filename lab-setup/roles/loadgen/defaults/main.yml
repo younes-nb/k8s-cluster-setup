@@ -1,0 +1,18 @@
+---
+# Defaults for loadgen role
+k6_version: ""  # auto-fetch latest
+k6_install_path: "/usr/local/bin/k6"
+loadgen_dir: "/opt/loadgen"
+loadgen_seeds_dir: "/opt/loadgen/seeds"
+
+# Default k6 run parameters (can be overridden at runtime)
+k6_target_url: "http://10.10.1.2:30080"
+k6_mcr_csv: "/opt/loadgen/mcr.csv"
+k6_max_requests: "5000"
+k6_user_pool: "500"
+k6_seed_file: "/opt/loadgen/seeds/tt_users.json"
+k6_start_min: "497"
+k6_test_min: "0"
+k6_trace_compress: "1"
+k6_open_loop: "1"
+k6_pre_allocated_vus: "100"

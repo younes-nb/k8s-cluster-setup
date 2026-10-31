@@ -1,0 +1,115 @@
+---
+- name: Ensure required packages for k6 download
+  ansible.builtin.apt:
+    name:
+      - curl
+      - ca-certificates
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Get latest k6 version from GitHub API
+  ansible.builtin.uri:
+    url: "https://api.github.com/repos/grafana/k6/releases/latest"
+    return_content: yes
+  register: k6_latest
+  changed_when: false
+
+- name: Set k6 version fact
+  ansible.builtin.set_fact:
+    k6_version: "{{ k6_latest.json.tag_name | regex_replace('^v', '') }}"
+
+# The load testing assets live in the sibling research repo
+# (lab-setup/playbook -> repo root -> .. -> sibling).
+- name: Resolve research repo path on the controller
+  ansible.builtin.set_fact:
+    load_testing_src: "{{ playbook_dir }}/../../../predictive-k8s-autoscaling/load_testing"
+
+- name: Check research repo load_testing exists on controller
+  ansible.builtin.stat:
+    path: "{{ load_testing_src }}/k6/trainticket.js"
+  register: _load_testing_src
+  delegate_to: localhost
+  become: false
+
+- name: Fail fast if research repo path is wrong
+  ansible.builtin.assert:
+    that: _load_testing_src.stat.exists
+    fail_msg: "load_testing sources not found at {{ load_testing_src }} — fix load_testing_src in loadgen role"
+
+- name: Download k6 binary
+  ansible.builtin.get_url:
+    url: "https://github.com/grafana/k6/releases/download/v{{ k6_version }}/k6-v{{ k6_version }}-linux-amd64.tar.gz"
+    dest: "/tmp/k6-v{{ k6_version }}-linux-amd64.tar.gz"
+    mode: "0644"
+
+- name: Create temp extract directory
+  ansible.builtin.file:
+    path: /tmp/k6-extract
+    state: directory
+    mode: "0755"
+
+- name: Extract k6 binary
+  ansible.builtin.unarchive:
+    src: "/tmp/k6-v{{ k6_version }}-linux-amd64.tar.gz"
+    dest: "/tmp/k6-extract"
+    remote_src: yes
+    extra_opts: [--strip-components=1]
+
+- name: Install k6 binary
+  ansible.builtin.copy:
+    src: "/tmp/k6-extract/k6"
+    dest: "/usr/local/bin/k6"
+    mode: "0755"
+    remote_src: yes
+  become: true
+
+- name: Verify k6 installation
+  ansible.builtin.command: /usr/local/bin/k6 version
+  register: k6_ver
+  changed_when: false
+
+- name: Create loadgen directory
+  ansible.builtin.file:
+    path: /opt/loadgen
+    state: directory
+    mode: "0755"
+
+- name: Create loadgen seeds directory
+  ansible.builtin.file:
+    path: /opt/loadgen/seeds
+    state: directory
+    mode: "0755"
+
+- name: Copy seed file if available locally (optional, else generated at runtime)
+  ansible.builtin.copy:
+    src: "{{ load_testing_src }}/seeds/tt_users.json"
+    dest: /opt/loadgen/seeds/tt_users.json
+    mode: "0644"
+  ignore_errors: true
+
+- name: Install k6 test script
+  ansible.builtin.copy:
+    src: "{{ load_testing_src }}/k6/trainticket.js"
+    dest: /opt/loadgen/trainticket.js
+    mode: "0644"
+
+- name: Install run_test.sh wrapper
+  ansible.builtin.copy:
+    src: "{{ load_testing_src }}/run_test.sh"
+    dest: /opt/loadgen/run_test.sh
+    mode: "0755"
+
+- name: Create launch script template
+  ansible.builtin.template:
+    src: launch_k6.sh.j2
+    dest: /opt/loadgen/launch_k6.sh
+    mode: "0755"
+
+- name: Clean up temp files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/k6-v{{ k6_version }}-linux-amd64.tar.gz
+    - /tmp/k6-extract

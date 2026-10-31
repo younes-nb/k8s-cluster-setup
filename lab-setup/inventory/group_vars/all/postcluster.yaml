@@ -4,7 +4,7 @@ gateway_nodeport_http: 30080
 gateway_nodeport_https: 30081
 gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml"
 ingress_class: "istio"
-base_domain: "younesnb.linkpc.net"
+# base_domain: "younesnb.linkpc.net"  # no longer used (no external LB)
 storage_class: "local-path"
 
 cert_issuer_name: "letsencrypt-http01"
@@ -16,7 +16,7 @@ monitoring_ns: "monitoring"
 prom_release_label: "prometheus-stack"
 prom_repo_name: "prometheus-community"
 prom_repo_url: "https://prometheus-community.github.io/helm-charts"
-grafana_host: "grafana.{{ base_domain }}"
+# grafana_host: "grafana.{{ base_domain }}"  # no external ingress; access via NodePort 30030
 grafana_timezone: "Asia/Tehran"
 grafana_admin_password: "{{ vault_grafana_admin_password }}"
 grafana_pvc_size: "20Gi"

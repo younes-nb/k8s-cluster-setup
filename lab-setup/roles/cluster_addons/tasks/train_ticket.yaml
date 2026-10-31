@@ -343,35 +343,40 @@
   loop_control:
     label: "{{ item.metadata.name }}"
 
-- name: Create/Update Gateway (all traffic via ts-ui-dashboard, TLS)
+- name: Create/Update Gateway (HTTP only for private network; HTTPS optional)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    template: gateway.yaml.j2
+
+- name: Create/Update internal HTTPRoute (private network HTTP, no hostname)
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
     definition:
       apiVersion: gateway.networking.k8s.io/v1
-      kind: Gateway
+      kind: HTTPRoute
       metadata:
-        name: train-ticket-gateway
+        name: train-ticket-route-internal
         namespace: "{{ tt_ns }}"
       spec:
-        gatewayClassName: "{{ gateway_class }}"
-        listeners:
-        - name: https
-          protocol: HTTPS
-          port: 443
-          tls:
-            mode: Terminate
-            certificateRefs:
-            - kind: Secret
-              name: "{{ tt_tls_secret }}"
-        - name: http
-          protocol: HTTP
+        parentRefs:
+        - name: train-ticket-gateway
           port: 80
+        rules:
+        - matches:
+          - path:
+              type: PathPrefix
+              value: /
+          backendRefs:
+          - name: ts-ui-dashboard
+            port: 8080
 
-- name: Create/Update HTTPRoute (frontend-only via ts-ui-dashboard)
+- name: Create/Update public HTTPRoute (requires tt_host / base_domain)
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
+    when: tt_host is defined and tt_host
     definition:
       apiVersion: gateway.networking.k8s.io/v1
       kind: HTTPRoute
@@ -393,7 +398,7 @@
           - name: ts-ui-dashboard
             port: 8080
 
-- name: Pin Gateway Service NodePorts to lb forwarding ports
+- name: Pin Gateway Service NodePorts for private network access
   ansible.builtin.shell: |
     kubectl --kubeconfig="{{ kubeconfig_path }}" -n "{{ tt_ns }}" get svc train-ticket-gateway-istio -o json | python3 -c "
     import json,subprocess,sys
@@ -413,10 +418,11 @@
   changed_when: "'patched' in _gw_nodeports.stdout"
   failed_when: false
 
-- name: Create/Update Certificate for Gateway TLS listener
+- name: Create/Update Certificate for Gateway TLS listener (only if tt_host defined)
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
+    when: tt_host is defined and tt_host
     definition:
       apiVersion: cert-manager.io/v1
       kind: Certificate
@@ -431,13 +437,14 @@
         dnsNames:
           - "{{ tt_host }}"
 
-- name: Wait for TLS certificate to be Ready
+- name: Wait for TLS certificate to be Ready (only if tt_host defined)
   kubernetes.core.k8s_info:
     kubeconfig: "{{ kubeconfig_path }}"
     api_version: cert-manager.io/v1
     kind: Certificate
     name: "{{ tt_tls_secret }}"
     namespace: "{{ tt_ns }}"
+  when: tt_host is defined and tt_host
   register: _tt_cert
   until: >
     (_tt_cert.resources | length) > 0 and

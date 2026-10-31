@@ -2,7 +2,7 @@
 # Orchestrates full cluster setup end-to-end
 # Steps:
 #  1) lab-setup/preparing.yaml          (name: preparing)
-#  2) lab-setup/haproxy-lb.yaml         (name: haproxy)
+#  2) lab-setup/loadgen.yaml            (name: loadgen)
 #  3) kubespray cluster.yml (with venv) (name: kubespray)
 #  4) lab-setup/postcluster.yaml        (name: postcluster)
 #  5) copy kubectl from master1 to runner (name: kubectl)
@@ -72,7 +72,7 @@ Usage: $0 [--start-from=STEP] | [STEP]
 
 Steps (in order):
   preparing   - run lab-setup/preparing.yaml
-  haproxy     - run lab-setup/haproxy-lb.yaml
+  loadgen     - run lab-setup/loadgen.yaml
   kubespray   - deploy cluster with kubespray (venv + cluster.yml)
   postcluster - run lab-setup/postcluster.yaml
   kubectl     - copy kubectl from master1 to ~/.local/bin
@@ -177,16 +177,16 @@ else
   info "Skipping step: preparing"
 fi
 
-# ---------- 2) HAProxy LB play ----------
-if should_run haproxy; then
-  step_banner "Running HAProxy LB playbook (lab-setup)"
+# ---------- 2) Load Generator play ----------
+if should_run loadgen; then
+  step_banner "Running Load Generator playbook (lab-setup)"
   pushd "$LAB_DIR" >/dev/null
-  info "ansible-playbook -i inventory/host.yaml playbook/haproxy-lb.yaml -b"
-  ansible-playbook -i inventory/host.yaml playbook/haproxy-lb.yaml -b ${ANSIBLE_VAULT_FLAG:-}
-  ok "HAProxy LB playbook finished"
+  info "ansible-playbook -i inventory/host.yaml playbook/loadgen.yaml -b"
+  ansible-playbook -i inventory/host.yaml playbook/loadgen.yaml -b ${ANSIBLE_VAULT_FLAG:-}
+  ok "Load Generator playbook finished"
   popd >/dev/null
 else
-  info "Skipping step: haproxy"
+  info "Skipping step: loadgen"
 fi
 
 # ---------- 3) Kubespray cluster (with venv) ----------

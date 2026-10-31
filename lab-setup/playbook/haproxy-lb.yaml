@@ -1,8 +1,0 @@
----
-- name: Configure HAProxy on the load balancer
-  hosts: lb
-  become: true
-  gather_facts: yes
-
-  roles:
-    - haproxy_lb

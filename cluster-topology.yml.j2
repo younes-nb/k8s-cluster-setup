@@ -1,11 +1,21 @@
 cloudlab_hosts:
-  lb: {{ env_vars.LB }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+  loadgen: {{ env_vars.LOADGEN }}.{{ env_vars.CLOUDLAB_DOMAIN }}
   master1: {{ env_vars.MASTER1 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
   master2: {{ env_vars.MASTER2 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
   master3: {{ env_vars.MASTER3 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
   worker1: {{ env_vars.WORKER1 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
   worker2: {{ env_vars.WORKER2 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
   worker3: {{ env_vars.WORKER3 }}.{{ env_vars.CLOUDLAB_DOMAIN }}
+
+# Private network IPs (link-1 LAN, 10.10.1.0/24)
+cloudlab_private_ips:
+  loadgen: {{ env_vars.LOADGEN_PRIVATE_IP | default('10.10.1.1') }}
+  master1: {{ env_vars.MASTER1_PRIVATE_IP | default('10.10.1.2') }}
+  master2: {{ env_vars.MASTER2_PRIVATE_IP | default('10.10.1.3') }}
+  master3: {{ env_vars.MASTER3_PRIVATE_IP | default('10.10.1.4') }}
+  worker1: {{ env_vars.WORKER1_PRIVATE_IP | default('10.10.1.5') }}
+  worker2: {{ env_vars.WORKER2_PRIVATE_IP | default('10.10.1.6') }}
+  worker3: {{ env_vars.WORKER3_PRIVATE_IP | default('10.10.1.7') }}
 
 kube_control_plane_hosts: [master1, master2, master3]
 kube_worker_hosts: [worker1, worker2, worker3]
