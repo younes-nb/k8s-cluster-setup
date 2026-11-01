@@ -4,7 +4,6 @@ gateway_nodeport_http: 30080
 gateway_nodeport_https: 30081
 gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml"
 ingress_class: "istio"
-# base_domain: "younesnb.linkpc.net"  # no longer used (no external LB)
 storage_class: "local-path"
 
 cert_issuer_name: "letsencrypt-http01"
@@ -16,7 +15,7 @@ monitoring_ns: "monitoring"
 prom_release_label: "prometheus-stack"
 prom_repo_name: "prometheus-community"
 prom_repo_url: "https://prometheus-community.github.io/helm-charts"
-# grafana_host: "grafana.{{ base_domain }}"  # no external ingress; access via NodePort 30030
+grafana_host: "grafana.{{ base_domain }}"
 grafana_timezone: "Asia/Tehran"
 grafana_admin_password: "{{ vault_grafana_admin_password }}"
 grafana_pvc_size: "20Gi"
@@ -41,21 +40,17 @@ istio_stats_inclusions:
   - '.*\.downstream_cx_active$'
 
 tempo_image: "docker.io/grafana/tempo:3.0.3"
-# Disk-pressure incident 2026-10-21: 336h retention with ~3 GB/h of OTLP at the
-# 5s cadence filled worker3's tempo-data PV to 40G and triggered DiskPressure
-# evictions. NOTE: storage-class local-path does NOT enforce PVC sizes — the
-# retention window below is the real bound (values sized to measured ingest).
-tempo_retention: "4h"   # ~= 12-14G resident on this 63G disk
+tempo_retention: "4h"
 tempo_pvc_size: "15Gi"
 tempo_sampling_pct: 10.0
 
 loki_image: "docker.io/grafana/loki:3.7.8"
-loki_pvc_size: "10Gi"   # existing PV — do NOT resize (local-path rejects expansion); retention is the real bound
-loki_retention: "6h"    # ~= 15G resident (was 336h -> 33G pile on master1)
+loki_pvc_size: "10Gi"
+loki_retention: "6h"
 
 mimir_image: "docker.io/grafana/mimir:3.2.1"
 mimir_pvc_size: "50Gi"
-mimir_retention: "18h"  # analytic window for post-run truth queries (was 720h -> unbounded, then 48h; disk-pressure 2026-10-23: 5s-cadence istio ingest ~16G/24h ~= 32G resident at 48h -> master3 hit 84% + taint; 18h ~= 12G resident)
+mimir_retention: "18h"
 mimir_max_series: 1000000
 mimir_ingest_rate: 500000
 mimir_ingest_burst: 2000000
@@ -73,12 +68,8 @@ tt_enable_istio_injection: true
 tt_min_replicas: 1
 tt_max_replicas: 10
 tt_cpu_avg_utilization: 80
-tt_host: "train-ticket.{{ base_domain }}"
+tt_host: ""
 tt_tls_secret: "trainticket-tls"
-# Per-deployment readiness budget. 60 x 5s (5 min) was sometimes insufficient
-# on fresh clusters: the first services to start pay all the image-pull cost,
-# and app warmup (Spring Boot + DB connect) can exceed 5 min even after the
-# image is cached — the pod then converges shortly after the wait gave up.
 tt_wait_retries: 180
 tt_wait_delay: 5
 tt_mongo_image: "mongo:4.4"

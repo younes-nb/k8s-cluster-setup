@@ -373,10 +373,10 @@
             port: 8080
 
 - name: Create/Update public HTTPRoute (requires tt_host / base_domain)
+  when: tt_host is defined and tt_host
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
-    when: tt_host is defined and tt_host
     definition:
       apiVersion: gateway.networking.k8s.io/v1
       kind: HTTPRoute
@@ -398,7 +398,7 @@
           - name: ts-ui-dashboard
             port: 8080
 
-- name: Pin Gateway Service NodePorts for private network access
+- name: Pin Gateway Service NodePorts and public externalIP
   ansible.builtin.shell: |
     kubectl --kubeconfig="{{ kubeconfig_path }}" -n "{{ tt_ns }}" get svc train-ticket-gateway-istio -o json | python3 -c "
     import json,subprocess,sys
@@ -408,6 +408,10 @@
     for i, p in enumerate(svc['spec']['ports']):
         if p['port'] in want and p.get('nodePort') != want[p['port']]:
             ops.append({'op': 'replace', 'path': f\"/spec/ports/{i}/nodePort\", 'value': want[p['port']]})
+    want_ips = [{% if (tt_host is defined and tt_host) or (grafana_host is defined and grafana_host) %}'{{ cloudlab_ips.master1 }}'{% endif %}]
+    has_ips = svc['spec'].get('externalIPs') or []
+    if has_ips != want_ips:
+        ops.append({'op': 'replace' if has_ips else 'add', 'path': '/spec/externalIPs', 'value': want_ips})
     if ops:
         subprocess.run(['kubectl', '--kubeconfig={{ kubeconfig_path }}', '-n', '{{ tt_ns }}', 'patch', 'svc', 'train-ticket-gateway-istio', '--type=json', '-p', json.dumps(ops)], check=True)
         print('patched')
@@ -418,11 +422,83 @@
   changed_when: "'patched' in _gw_nodeports.stdout"
   failed_when: false
 
-- name: Create/Update Certificate for Gateway TLS listener (only if tt_host defined)
+- name: Allow tt_ns HTTPRoutes to reference the grafana service (ReferenceGrant)
+  when: grafana_host is defined and grafana_host
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
-    when: tt_host is defined and tt_host
+    definition:
+      apiVersion: gateway.networking.k8s.io/v1beta1
+      kind: ReferenceGrant
+      metadata:
+        name: grafana-from-train-ticket
+        namespace: "{{ monitoring_ns }}"
+      spec:
+        from:
+        - group: gateway.networking.k8s.io
+          kind: HTTPRoute
+          namespace: "{{ tt_ns }}"
+        to:
+        - group: ""
+          kind: Service
+          name: prometheus-stack-grafana
+
+- name: Create/Update public Grafana HTTPSRoute (requires grafana_host)
+  when: grafana_host is defined and grafana_host
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      metadata:
+        name: grafana-public
+        namespace: "{{ tt_ns }}"
+      spec:
+        parentRefs:
+        - name: train-ticket-gateway
+          port: 443
+        hostnames:
+        - "{{ grafana_host }}"
+        rules:
+        - matches:
+          - path:
+              type: PathPrefix
+              value: /
+          backendRefs:
+          - name: prometheus-stack-grafana
+            namespace: "{{ monitoring_ns }}"
+            port: 3000
+
+- name: Redirect public grafana HTTP to HTTPS
+  when: grafana_host is defined and grafana_host
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      metadata:
+        name: grafana-public-http-redirect
+        namespace: "{{ tt_ns }}"
+      spec:
+        parentRefs:
+        - name: train-ticket-gateway
+          port: 80
+        hostnames:
+        - "{{ grafana_host }}"
+        rules:
+        - filters:
+          - type: RequestRedirect
+            requestRedirect:
+              scheme: https
+              statusCode: 301
+
+- name: Create/Update Certificate for Gateway TLS listener (public hosts only)
+  when: (tt_host is defined and tt_host) or (grafana_host is defined and grafana_host)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
     definition:
       apiVersion: cert-manager.io/v1
       kind: Certificate
@@ -434,17 +510,18 @@
         issuerRef:
           name: "{{ cert_issuer_name }}"
           kind: ClusterIssuer
-        dnsNames:
-          - "{{ tt_host }}"
+        dnsNames: >-
+          {{ ([tt_host] if (tt_host is defined and tt_host) else [])
+             + ([grafana_host] if (grafana_host is defined and grafana_host) else []) }}
 
-- name: Wait for TLS certificate to be Ready (only if tt_host defined)
+- name: Wait for TLS certificate to be Ready (public hosts only)
   kubernetes.core.k8s_info:
     kubeconfig: "{{ kubeconfig_path }}"
     api_version: cert-manager.io/v1
     kind: Certificate
     name: "{{ tt_tls_secret }}"
     namespace: "{{ tt_ns }}"
-  when: tt_host is defined and tt_host
+  when: (tt_host is defined and tt_host) or (grafana_host is defined and grafana_host)
   register: _tt_cert
   until: >
     (_tt_cert.resources | length) > 0 and

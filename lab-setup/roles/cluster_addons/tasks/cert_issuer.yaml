@@ -15,10 +15,7 @@
           privateKeySecretRef:
             name: "{{ acme_private_key_secret }}"
           solvers:
-            - selector:
-                dnsNames:
-                  - "{{ tt_host }}"
-              http01:
+            - http01:
                 gatewayHTTPRoute:
                   parentRefs:
                     - name: train-ticket-gateway
@@ -27,4 +24,3 @@
             - http01:
                 ingress:
                   class: "{{ ingress_class }}"
-

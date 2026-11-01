@@ -3,7 +3,7 @@
   ansible.builtin.shell: |
     pkill -f "port-forward svc/prometheus-stack-grafan[a] " 2>/dev/null || true
     nohup kubectl --kubeconfig="{{ kubeconfig_path }}" port-forward \
-      svc/prometheus-stack-grafana 3000:80 -n {{ monitoring_ns }} --address 127.0.0.1 \
+      svc/prometheus-stack-grafana 3000:3000 -n {{ monitoring_ns }} --address 127.0.0.1 \
       >/tmp/grafana-pf.log 2>&1 &
     for i in $(seq 1 30); do
       curl -sf -m 3 http://127.0.0.1:3000/api/health >/dev/null 2>&1 && exit 0
