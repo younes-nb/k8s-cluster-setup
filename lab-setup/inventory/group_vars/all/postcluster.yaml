@@ -41,7 +41,7 @@ istio_stats_inclusions:
 
 tempo_image: "docker.io/grafana/tempo:3.0.3"
 tempo_retention: "4h"
-tempo_pvc_size: "15Gi"
+tempo_pvc_size: "5Gi"   # was 15Gi but grew unbounded to 37GiB on worker1's node disk (local-path has no quota), causing DiskPressure + mass pod evictions across the whole namespace (2026-11-06). 5Gi + 4h retention keeps it bounded.
 tempo_sampling_pct: 10.0
 
 loki_image: "docker.io/grafana/loki:3.7.8"
@@ -50,8 +50,8 @@ loki_retention: "6h"
 
 mimir_image: "docker.io/grafana/mimir:3.2.1"
 mimir_pvc_size: "50Gi"
-mimir_retention: "18h"
-mimir_max_series: 1000000
+mimir_retention: "24h"   # raised from 18h: experiment window ~16h needs run-1 data alive through final analysis; est. 22G resident < 44G free on master2
+mimir_max_series: 4000000
 mimir_ingest_rate: 500000
 mimir_ingest_burst: 2000000
 
@@ -66,7 +66,7 @@ tt_repo_version: "0.0.4"
 tt_clone_dir: "/tmp/train-ticket"
 tt_enable_istio_injection: true
 tt_min_replicas: 1
-tt_max_replicas: 10
+tt_max_replicas: 8
 tt_cpu_avg_utilization: 80
 tt_host: ""
 tt_tls_secret: "trainticket-tls"

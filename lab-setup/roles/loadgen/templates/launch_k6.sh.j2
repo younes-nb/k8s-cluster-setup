@@ -35,5 +35,5 @@ HOST="$TARGET_URL" MCR_CSV="$MCR_CSV" MAX_REQUESTS="$MAX_REQUESTS" \
 USER_POOL="$USER_POOL" SEED_FILE="$SEED_FILE" START_MIN="$START_MIN" \
 TEST_MIN="$TEST_MIN" TRACE_COMPRESS="$TRACE_COMPRESS" OPEN_LOOP="$OPEN_LOOP" \
 PRE_ALLOCATED_VUS="$PRE_ALLOCATED_VUS" FLAT_RPS="$FLAT_RPS" "$K6_BIN" run \
-  -o experimental-prometheus-rw \
+  $([ -n "${K6_PROMETHEUS_RW_SERVER_URL:-}" ] && echo "-o experimental-prometheus-rw" || true) \
   /opt/loadgen/trainticket.js
