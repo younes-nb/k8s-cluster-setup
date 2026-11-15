@@ -78,7 +78,7 @@ spec:
         env:
         - name: GOMEMLIMIT
           # Go soft heap limit ~90% of the hard limit so GC works instead of OOM
-          value: "44GiB"
+          value: "4GiB"
         ports:
         - {containerPort: 8080, name: http}
         - {containerPort: 9095, name: grpc}
@@ -90,8 +90,8 @@ spec:
           initialDelaySeconds: 60
           periodSeconds: 15
         resources:
-          requests: {cpu: "2", memory: "28Gi"}
-          limits: {cpu: "8", memory: "48Gi"}
+          requests: {cpu: "500m", memory: "2Gi"}
+          limits: {cpu: "2", memory: "4Gi"}
       volumes:
       - name: conf
         configMap:

@@ -128,6 +128,57 @@
                     - key: nginx.conf
                       path: nginx.conf
 
+- name: Add readiness probe to ts-ui-dashboard (fixes startup-race 503s)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ts-ui-dashboard
+        namespace: "{{ tt_ns }}"
+      spec:
+        template:
+          spec:
+            containers:
+              - name: ts-ui-dashboard
+                readinessProbe:
+                  httpGet:
+                    path: /
+                    port: 8080
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+                  timeoutSeconds: 3
+                  failureThreshold: 3
+                livenessProbe:
+                  httpGet:
+                    path: /
+                    port: 8080
+                  initialDelaySeconds: 15
+                  periodSeconds: 10
+                  timeoutSeconds: 3
+                  failureThreshold: 3
+
+- name: Add DestinationRule for mongo traffic (prevents Envoy idle-timeout closing pooled connections)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: networking.istio.io/v1beta1
+      kind: DestinationRule
+      metadata:
+        name: mongo-idle-timeout
+        namespace: "{{ tt_ns }}"
+      spec:
+        host: "*.{{ tt_ns }}.svc.cluster.local"
+        trafficPolicy:
+          connectionPool:
+            tcp:
+              maxConnections: 100
+              connectTimeout: 10s
+
 - name: Get Train-Ticket deployments
   kubernetes.core.k8s_info:
     api_version: apps/v1
