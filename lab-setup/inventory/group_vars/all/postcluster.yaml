@@ -144,3 +144,13 @@ monitoring_grafana_port: 3000
 # an unused 931 GB /dev/sdb, so the role formats and mounts that.)
 monitoring_data_dir: "/var/lib/monitoring"
 monitoring_disk_device: "/dev/sdb"
+
+# ---- TrainTicket namespace ResourceQuota --------------------------------
+# Sized for the clemson cluster (6 nodes x 40 C / 251 GiB). Requests only --
+# NO limits caps, because a limits cap blocks HPA scale-out and leaves
+# deployments with zero pods (see tasks/resource_quota.yaml).
+tq_requests_cpu: "200"
+tq_requests_memory: "1300Gi"
+tq_pods: "400"
+tq_count_deployments: "100"
+tq_count_replicasets: "400"

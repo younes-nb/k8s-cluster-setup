@@ -100,11 +100,15 @@
     dest: /opt/loadgen/run_test.sh
     mode: "0755"
 
-- name: Create launch script template
-  ansible.builtin.template:
-    src: launch_k6.sh.j2
+- name: Install the k6 launch wrapper
+  # Copy the repo's script rather than rendering a local template: that template
+  # had drifted from load_testing/k6/launch_k6.sh (no K6_OUT_DIR, /opt/loadgen
+  # baked into paths) -- two sources of truth for the same script.
+  ansible.builtin.copy:
+    src: "{{ load_testing_src }}/k6/launch_k6.sh"
     dest: /opt/loadgen/launch_k6.sh
     mode: "0755"
+  ignore_errors: true
 
 - name: Clean up temp files
   ansible.builtin.file:

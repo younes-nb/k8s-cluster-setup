@@ -56,3 +56,7 @@
 
 - import_tasks: train_ticket.yaml
   tags: [train-ticket]
+
+# Namespace ceiling for TrainTicket (declarative; was live-only before).
+- import_tasks: resource_quota.yaml
+  tags: [resource-quota]
