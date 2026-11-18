@@ -1,0 +1,10 @@
+{%- set ns = namespace(entries=[{"node": "DEFAULT_PATH_FOR_NON_LISTED_NODES", "paths": ["/opt/local-path-provisioner/"]}]) -%}
+{%- for n in monitoring_nodes -%}
+{%- set ns.entries = ns.entries + [{"node": n, "paths": [monitoring_disk_mount + "/local-path-provisioner"]}] -%}
+{%- endfor -%}
+{%- set nodepath = {"nodePathMap": ns.entries} | to_json -%}
+{
+  "data": {
+    "config.json": {{ nodepath | to_json }}
+  }
+}

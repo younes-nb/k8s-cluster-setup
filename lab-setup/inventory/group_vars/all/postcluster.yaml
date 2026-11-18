@@ -6,6 +6,47 @@ gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/d
 ingress_class: "istio"
 storage_class: "local-path"
 
+# ---- monitoring placement (2026-11-17) -----------------------------------
+# Loki and Mimir run on the control-plane nodes, NOT on workers: a worker is
+# also a benchmark target, so a monitoring pod there competes with the workload
+# under test. The masters carry a spare second disk mounted at
+# /var/lib/monitoring (see roles/cluster_addons/tasks/monitoring_disk.yaml), so
+# monitoring I/O never shares a spindle with etcd.
+monitoring_storage_class: "local-path-retain"   # reclaimPolicy: Retain
+monitoring_node_selector:
+  kubernetes.io/hostname: "master1"
+monitoring_disk_mount: "/var/lib/monitoring"
+
+# Control-plane nodes. Derived from the inventory's `master*` hosts so a new
+# cluster with different names needs no change here; override explicitly if your
+# control plane is not called master*.
+control_plane_nodes: >-
+  {{ groups['nodes'] | default([]) | select('search', '^master') | list
+     or ['master1', 'master2', 'master3'] }}
+
+# Taint the masters so only control-plane/monitoring pods run there.
+# FALSE by default: at this cluster size the namespace needs more CPU than the
+# workers alone provide, so tainting left ~12 pods permanently unschedulable.
+# Protection comes from kubelet reservations instead (see below). Set to true
+# only on a cluster whose workers can host the whole namespace.
+control_plane_taint: false
+
+# Only used by the (retired) in-cluster monitoring disk task; kept so a
+# re-enable is a one-line change.
+monitoring_nodes: "{{ control_plane_nodes }}"
+
+# ---- kubelet reservations (control-plane + system headroom) --------------
+# allocatable = capacity - kubeReserved - systemReserved - evictionHard.
+# 2026-11-17: without these the masters had allocatable == capacity and ~12
+# TrainTicket pods (1 Gi each) starved kubelet and the apiserver until master1
+# went NotReady. The kubelet reads /etc/kubernetes/kubelet-config.yaml.
+kubelet_config_path: "/etc/kubernetes/kubelet-config.yaml"
+kubelet_kube_reserved_cpu: "1"
+kubelet_kube_reserved_memory: "1536Mi"
+kubelet_system_reserved_cpu: "500m"
+kubelet_system_reserved_memory: "1Gi"
+kubelet_eviction_hard_memory: "500Mi"
+
 cert_issuer_name: "letsencrypt-http01"
 acme_server_url: "https://acme-v02.api.letsencrypt.org/directory"
 acme_email: "younesnikbin@gmail.com"
@@ -45,12 +86,12 @@ tempo_pvc_size: "10Gi"   # increased from 5Gi; 4h retention keeps it bounded
 tempo_sampling_pct: 10.0
 
 loki_image: "docker.io/grafana/loki:3.7.8"
-loki_pvc_size: "20Gi"
-loki_retention: "48h"   # increased from 6h for extended log analysis across experiment runs; fits within 20Gi PVC
+loki_pvc_size: "100Gi"     # dedicated disk, 48h -> 168h retention
+loki_retention: "168h"   # 7 days; measured ~120 MB/h at 32k, so 100Gi is ample
 
 mimir_image: "docker.io/grafana/mimir:3.2.1"
-mimir_pvc_size: "25Gi"
-mimir_retention: "48h"   # increased from 24h to match Loki; fits within 25Gi PVC
+mimir_pvc_size: "250Gi"    # dedicated disk, 7-day retention
+mimir_retention: "168h"   # 7 days; measured ~3 GB/day at 32k, so 250Gi is ample
 mimir_max_series: 4000000
 mimir_ingest_rate: 500000
 mimir_ingest_burst: 2000000
@@ -84,3 +125,15 @@ tt_db_pvc_size: "2Gi"
 tt_mongo_data_path: "/data/db"
 tt_mysql_data_path: "/var/lib/mysql"
 
+# ---- Monitoring is OUTSIDE the cluster (2026-11-18) ----------------------
+# Mimir / Loki / Tempo / Grafana run on the `monitoring` host (see
+# inventory/host.yaml: today the same machine as the loadgen, private
+# address 10.10.1.1). Alloy stays in the cluster -- pod IPs are not routable
+# from outside -- and pushes here over the private network. Ports match the old
+# in-cluster Service ports so 127.0.0.1:18080 / :3100 keep working for every
+# script and tunnel helper.
+monitoring_host: "10.10.1.1"
+monitoring_mimir_port: 18080
+monitoring_loki_port: 3100
+monitoring_tempo_port: 3200
+monitoring_grafana_port: 3000

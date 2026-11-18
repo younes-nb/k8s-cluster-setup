@@ -161,6 +161,41 @@
                   timeoutSeconds: 3
                   failureThreshold: 3
 
+- name: Add liveness probe to ts-user-service (detects a wedged Tomcat Acceptor)
+  # ts-user-service loses its Tomcat Acceptor thread to OutOfMemoryError while
+  # the JVM stays alive and the listening socket stays open. A tcpSocket probe
+  # cannot see that (the kernel still accepts into the backlog) and an httpGet
+  # probe treats the app's universal 403 (Spring Security) as failure, so the
+  # probe must be an exec that only requires *any* 1xx-5xx status: it proves the
+  # application connector answered, and fails when the connector is wedged.
+  # Declarative here so a fresh `lab-setup` run cannot silently drop the probe
+  # that was previously only `kubectl patch`ed onto the live cluster.
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: ts-user-service
+        namespace: "{{ tt_ns }}"
+      spec:
+        template:
+          spec:
+            containers:
+              - name: ts-user-service
+                livenessProbe:
+                  exec:
+                    command:
+                      - /bin/sh
+                      - -c
+                      - "curl -s -o /dev/null -m 5 -w '%{http_code}' http://127.0.0.1:12342/ | grep -qE '^[1-5][0-9][0-9]$'"
+                  initialDelaySeconds: 300
+                  periodSeconds: 20
+                  timeoutSeconds: 10
+                  failureThreshold: 5
+
 - name: Add DestinationRule for mongo traffic (prevents Envoy idle-timeout closing pooled connections)
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
@@ -178,6 +213,13 @@
             tcp:
               maxConnections: 100
               connectTimeout: 10s
+              idleTimeout: 0s
+              # 0s disables Envoy's TCP idle timeout for mongo upstreams.
+              # Without it the default 1 h idle reap silently kills pooled
+              # connections that the mongo driver (3.4.3, maxConnectionLifeTime=0)
+              # expects to keep forever -> SocketException / "Prematurely reached
+              # end of stream" -> HTTP 500. The previous version of this rule set
+              # only maxConnections/connectTimeout despite its name.
 
 - name: Get Train-Ticket deployments
   kubernetes.core.k8s_info:

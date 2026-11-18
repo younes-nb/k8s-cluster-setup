@@ -1,0 +1,58 @@
+# Monitoring stack, hosted on the `monitoring` host (NOT in the cluster).
+#
+# Ports match the old in-cluster Service ports so 127.0.0.1:18080 (Mimir) and
+# 127.0.0.1:3100 (Loki) keep working for every existing script, and the
+# in-cluster Alloy scraper pushes to <monitoring_host>:<port> over the private
+# network. Published on 0.0.0.0 so both reach it.
+services:
+  mimir:
+    image: {{ monitoring_mimir_image }}
+    command: ["-config.file=/etc/mimir/mimir.yaml", "-target=all"]
+    container_name: mimir
+    ports:
+      - "{{ monitoring_ports.mimir }}:8080"
+    volumes:
+      - ./conf/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      - {{ monitoring_data_dir }}/mimir:/mimir
+    restart: unless-stopped
+    mem_limit: 8g
+
+  loki:
+    image: {{ monitoring_loki_image }}
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    container_name: loki
+    ports:
+      - "{{ monitoring_ports.loki }}:3100"
+    volumes:
+      - ./conf/loki.yaml:/etc/loki/loki.yaml:ro
+      - {{ monitoring_data_dir }}/loki:/loki
+    restart: unless-stopped
+    mem_limit: 4g
+
+  tempo:
+    image: {{ monitoring_tempo_image }}
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    container_name: tempo
+    ports:
+      - "{{ monitoring_ports.tempo }}:3200"
+    volumes:
+      - ./conf/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - {{ monitoring_data_dir }}/tempo:/var/tempo
+    restart: unless-stopped
+    mem_limit: 2g
+
+  grafana:
+    image: {{ monitoring_grafana_image }}
+    container_name: grafana
+    user: "472:472"
+    ports:
+      - "{{ monitoring_ports.grafana }}:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+    volumes:
+      - {{ monitoring_data_dir }}/grafana:/var/lib/grafana
+      - ./conf/grafana/provisioning:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    mem_limit: 1g

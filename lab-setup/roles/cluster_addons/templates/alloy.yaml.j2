@@ -94,7 +94,10 @@ data:
 
     prometheus.remote_write "mimir" {
       endpoint {
-        url = "http://mimir.{{ monitoring_ns }}.svc.cluster.local:8080/api/v1/push"
+        // Monitoring is no longer in the cluster: Mimir runs on the monitoring
+        // host (currently 10.10.1.1, the loadgen's private address). Alloy stays
+        // in the cluster because pod IPs are not routable from outside.
+        url = "http://{{ monitoring_host }}:{{ monitoring_mimir_port }}/api/v1/push"
       }
     }
 
@@ -116,7 +119,8 @@ data:
     }
     loki.write "loki" {
       endpoint {
-        url = "http://loki.{{ monitoring_ns }}.svc.cluster.local:3100/loki/api/v1/push"
+        // Loki also runs on the monitoring host now (see the Mimir note above).
+        url = "http://{{ monitoring_host }}:{{ monitoring_loki_port }}/loki/api/v1/push"
       }
     }
 

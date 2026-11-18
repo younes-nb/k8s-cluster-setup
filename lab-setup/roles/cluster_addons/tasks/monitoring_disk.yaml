@@ -1,0 +1,76 @@
+---
+# Monitoring placement (2026-11-17)
+#
+# Loki and Mimir belong on the control-plane nodes: a worker is also a
+# benchmark target, so a monitoring pod there competes with the workload under
+# test. The masters each carry a spare second disk, so monitoring I/O is also
+# kept off the disk that holds etcd.
+#
+# Runs BEFORE loki.yaml / mimir.yaml in main.yml, because the storage class it
+# creates is what binds the Loki/Mimir volumes to those nodes.
+
+- name: Ensure the monitoring data disk is mounted on each control-plane node
+  ansible.builtin.script: setup_monitoring_disk.sh
+  args:
+    executable: /bin/bash
+  become: true
+  delegate_to: "{{ item }}"
+  loop: "{{ monitoring_nodes }}"
+  register: _mon_disk
+  changed_when: "'mounted' in (_mon_disk.stdout | default(''))"
+  failed_when: _mon_disk.rc != 0
+
+- name: Render the local-path provisioner ConfigMap patch
+  # All logic lives in the template (namespace loop + to_json); keeping it here
+  # would need fragile nested-JSON Jinja that is hard to read and to debug.
+  ansible.builtin.template:
+    src: local-path-config-patch.json.j2
+    dest: "/tmp/local-path-config.json"
+    mode: "0600"
+  run_once: true
+
+- name: Apply the provisioner nodePathMap patch
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig_path }} -n local-path-storage
+    patch cm local-path-config --type merge
+    --patch-file=/tmp/local-path-config.json
+  register: _lp_patch
+  changed_when: "'patched' in _lp_patch.stdout"
+  run_once: true
+
+- name: Restart the provisioner so it reloads nodePathMap
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: apps/v1
+    kind: Deployment
+    metadata:
+      name: local-path-provisioner
+      namespace: local-path-storage
+    spec:
+      template:
+        metadata:
+          annotations:
+            kubectl.kubernetes.io/restartedAt: "{{ ansible_date_time.iso8601 }}"
+  when: _lp_patch is changed
+  run_once: true
+
+- name: Create the Retain storage class for monitoring volumes
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: "{{ monitoring_storage_class }}"
+      provisioner: rancher.io/local-path
+      reclaimPolicy: Retain
+      volumeBindingMode: WaitForFirstConsumer
+
+- name: Report monitoring volume placement
+  ansible.builtin.debug:
+    msg: >-
+      storage class={{ monitoring_storage_class }} (reclaimPolicy=Retain),
+      nodes={{ monitoring_nodes | join(',') }},
+      disk={{ monitoring_disk_mount }} (etcd stays on /dev/sda)

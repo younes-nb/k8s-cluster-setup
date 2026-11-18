@@ -1,0 +1,56 @@
+---
+# Monitoring stack (Mimir / Loki / Tempo / Grafana) deployed OUTSIDE the cluster,
+# on the `monitoring` host.
+#
+# Why it moved off the cluster (2026-11-18): Mimir was OOMKilled repeatedly at
+# its 4 Gi container limit while sharing the masters with the benchmark's pods,
+# and the masters had been reduced to 5 cores / 8.2 Gi allocatable by the kubelet
+# reservations. Moving the stores here gives them this node's disk and memory and
+# returns the masters to the benchmark, while the kubelet reservations keep the
+# control plane safe.
+#
+# Ports are kept identical to the in-cluster Service ports (Mimir 18080 via the
+# old port-forward, Loki 3100) so every orchestrator script, tunnel helper and
+# analysis tool keeps working unchanged. The containers bind 0.0.0.0, so:
+#   * local tools use 127.0.0.1:<port>
+#   * the in-cluster Alloy scraper uses <monitoring_host>:<port> over the
+#     private network (10.10.1.0/24).
+#
+# Alloy itself STAYS in the cluster: pod IPs (10.233.0.0/16) are not routable
+# from this node, so the scraper must run where the pods are.
+
+monitoring_base_dir: /opt/monitoring
+monitoring_data_dir: /var/lib/monitoring
+
+# Dedicated disk for the monitoring data. Set to the block device to have the
+# role format + mount it (mkfs only when it has no filesystem signature yet, and
+# an fstab entry is added). Leave EMPTY if the path is already a mountpoint --
+# the role then only verifies it and never touches the disk.
+#
+# Today this host uses the whole of /dev/sdb for it; set it in the inventory for
+# a dedicated monitoring node rather than here.
+monitoring_disk_device: ""
+monitoring_disk_label: monitoring
+
+monitoring_mimir_image: docker.io/grafana/mimir:3.2.1
+monitoring_loki_image: docker.io/grafana/loki:3.7.8
+monitoring_tempo_image: docker.io/grafana/tempo:3.0.3
+monitoring_grafana_image: docker.io/grafana/grafana:13.3.0-distroless
+
+# Public (cluster-facing) address the Alloy scraper pushes to. The group var of
+# the same name (inventory/host.yaml) wins; the default is the loadgen's private
+# address, which is where monitoring lives today.
+monitoring_push_address: "{{ monitoring_host | default('10.10.1.1') }}"
+
+monitoring_ports:
+  mimir: 18080
+  loki: 3100
+  tempo: 3200
+  grafana: 3000
+
+# Retention. The monitoring disk (/dev/sdb, 458 G) is dedicated to this, and the
+# measured rate is ~83 MB/h for Mimir+Loki combined, so 60 days is ~120 G -- the
+# old in-cluster value of 168h existed only because the master disks were shared.
+# Raising it is what makes the per-run Mimir/Loki dumps unnecessary: every run
+# stays queryable long after it finishes.
+monitoring_retention: 1440h

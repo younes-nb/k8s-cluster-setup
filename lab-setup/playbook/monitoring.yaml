@@ -1,0 +1,15 @@
+---
+# Deploy the monitoring stack on its own host (currently the same machine as the
+# load generator; see inventory/group_vars/all and inventory/host.yaml).
+#
+#   ansible-playbook -i inventory/host.yaml playbook/monitoring.yaml
+#
+# This replaces the in-cluster Mimir/Loki/Tempo/Grafana. Alloy stays in the
+# cluster (it must reach pod IPs) and pushes here over the private network.
+- name: Deploy monitoring stack outside the cluster
+  hosts: monitoring
+  become: true
+  gather_facts: yes
+
+  roles:
+    - monitoring

@@ -60,6 +60,31 @@ spec:
       labels:
         app: loki
     spec:
+      # Monitoring belongs on the control-plane nodes, never on a worker: a
+      # worker is also a benchmark target. `podAntiAffinity` keeps Loki and
+      # Mimir on different masters so neither starves the other. No
+      # priorityClassName is set on purpose: the default (0) is far below etcd's
+      # system-node-critical, so monitoring is evicted before the control plane.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: [loki, mimir]
+              topologyKey: kubernetes.io/hostname
+      priorityClassName: monitoring-critical
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       containers:
       - name: loki
         image: {{ loki_image }}
@@ -91,7 +116,7 @@ metadata:
   namespace: {{ monitoring_ns }}
 spec:
   accessModes: ["ReadWriteOnce"]
-  storageClassName: {{ storage_class }}
+  storageClassName: {{ monitoring_storage_class }}
   resources:
     requests:
       storage: {{ loki_pvc_size }}

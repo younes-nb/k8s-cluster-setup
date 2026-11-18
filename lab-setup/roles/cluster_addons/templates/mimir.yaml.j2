@@ -59,18 +59,31 @@ spec:
       labels:
         app: mimir
     spec:
-    spec:
+      # Monitoring belongs on the control-plane nodes, never on a worker:
+      # a worker is also a benchmark target. `podAntiAffinity` keeps Loki and
+      # Mimir on different masters so neither starves the other. No
+      # priorityClassName is set on purpose: the default (0) is far below etcd's
+      # system-node-critical, so monitoring is evicted before the control plane.
       affinity:
         nodeAffinity:
-          # float to any master with headroom instead of pinning one node;
-          # (local-path PVC pins the node after the volume is created — delete
-          # the PVC to move Mimir to another master)
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
-            - matchExpressions:
-              - key: kubernetes.io/hostname
-                operator: In
-                values: [master1, master2, master3]
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: Exists
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: [loki, mimir]
+              topologyKey: kubernetes.io/hostname
+      priorityClassName: monitoring-critical
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
       containers:
       - name: mimir
         image: {{ mimir_image }}
@@ -107,7 +120,7 @@ metadata:
   namespace: {{ monitoring_ns }}
 spec:
   accessModes: ["ReadWriteOnce"]
-  storageClassName: {{ storage_class }}
+  storageClassName: {{ monitoring_storage_class }}
   resources:
     requests:
       storage: {{ mimir_pvc_size }}

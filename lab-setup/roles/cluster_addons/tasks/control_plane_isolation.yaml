@@ -1,0 +1,66 @@
+---
+# Keep the control-plane nodes usable for the benchmark while still protecting
+# the system daemons and the control plane itself.
+#
+# History (2026-11-17): master1 went NotReady mid-run. Root cause: the masters
+# carried NO taints and no kubelet reservations, so the scheduler placed ~12
+# TrainTicket pods (1 Gi each) on each 12 GB master. Under load that starved
+# kubelet and the apiserver — the journal showed `kube-apiserver-master1`
+# readiness probes failing with HTTP 500 and a flood of probe failures for app
+# pods.
+#
+# Two different remedies were tried:
+#   1. Taint the masters (NoSchedule). This works, but at this cluster size the
+#      namespace needs more CPU than the workers alone provide, so tainting made
+#      ~12 pods permanently unschedulable and broke the cold reset.
+#   2. Kubelet reservations (see kubelet_reservations.yaml) + a namespace
+#      ResourceQuota. allocatable = capacity - reservations, so the system and
+#      the control plane always keep their headroom, while the scheduler is
+#      still free to use the masters.
+#
+# The taint is therefore OFF by default. Set control_plane_taint=true only on a
+# cluster big enough that the workers alone can host the whole namespace.
+- name: Taint the control-plane nodes (opt-in)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Node
+      metadata:
+        name: "{{ item }}"
+      spec:
+        taints:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+  loop: "{{ control_plane_nodes }}"
+  when: control_plane_taint | bool
+
+- name: Remove the control-plane taint (default)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: absent
+    definition:
+      apiVersion: v1
+      kind: Node
+      metadata:
+        name: "{{ item }}"
+      spec:
+        taints:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+  loop: "{{ control_plane_nodes }}"
+  when: not (control_plane_taint | bool)
+
+- name: Give monitoring pods a high priority so node pressure evicts them last
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: scheduling.k8s.io/v1
+      kind: PriorityClass
+      metadata:
+        name: monitoring-critical
+      value: 1000000000
+      globalDefault: false
+      description: "Monitoring (Loki/Mimir) must survive node pressure; evicted after all application pods."

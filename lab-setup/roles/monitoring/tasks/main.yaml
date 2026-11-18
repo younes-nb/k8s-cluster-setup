@@ -1,0 +1,152 @@
+---
+# Deploy the monitoring stack on the `monitoring` host (outside the cluster).
+#
+# Layout:
+#   /opt/monitoring/            compose file + configs (rendered from templates)
+#   /var/lib/monitoring/{mimir,loki,tempo,grafana}   data (dedicated disk)
+
+- name: Ensure monitoring group is not empty
+  ansible.builtin.assert:
+    that: groups['monitoring'] | default([]) | length > 0
+    fail_msg: "no `monitoring` host in the inventory -- add one under all.children.monitoring"
+
+- name: Resolve the address the cluster will push to
+  ansible.builtin.set_fact:
+    monitoring_push_address: "{{ monitoring_host | default(ansible_host) | default('10.10.1.1') }}"
+
+# The role used to only mkdir under {{ monitoring_data_dir }}, so a fresh host
+# put Mimir/Loki on the root filesystem. Format + mount the dedicated disk when
+# monitoring_disk_device is set; skip cleanly when it is not (the path may
+# already be a mountpoint, as it is today).
+- name: Prepare the monitoring data disk
+  ansible.builtin.script: setup_monitoring_disk.sh
+  args:
+    executable: /bin/bash
+  environment:
+    DEV: "{{ monitoring_disk_device | default('') }}"
+    MNT: "{{ monitoring_data_dir }}"
+    LABEL: "{{ monitoring_disk_label }}"
+  become: true
+  register: _mon_disk
+  changed_when: "'mounted' in (_mon_disk.stdout | default(''))"
+  failed_when: _mon_disk.rc != 0
+
+- name: Report disk preparation
+  ansible.builtin.debug:
+    msg: "{{ _mon_disk.stdout | default('') }}"
+
+- name: Create base directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ monitoring_base_dir }}"
+    - "{{ monitoring_base_dir }}/conf"
+    - "{{ monitoring_base_dir }}/conf/grafana/provisioning/datasources"
+    - "{{ monitoring_data_dir }}/mimir"
+    - "{{ monitoring_data_dir }}/loki"
+    - "{{ monitoring_data_dir }}/tempo"
+    - "{{ monitoring_data_dir }}/grafana"
+  become: true
+
+# Each image runs as a non-root UID, so the bind-mounted data dirs must be owned
+# by it or the container cannot write (mimir=0, loki=10001, tempo=10001,
+# grafana=472). Tempo's image entrypoint IS /tempo (the binary), so its data
+# must NOT be mounted at /tempo -- it lives at /var/tempo.
+- name: Give each data dir to the UID its image runs as
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    recurse: true
+  loop:
+    - {path: "{{ monitoring_data_dir }}/mimir", owner: "0", group: "0"}
+    - {path: "{{ monitoring_data_dir }}/loki", owner: "10001", group: "10001"}
+    - {path: "{{ monitoring_data_dir }}/tempo", owner: "10001", group: "10001"}
+    - {path: "{{ monitoring_data_dir }}/grafana", owner: "472", group: "472"}
+  become: true
+
+- name: Render Mimir config
+  ansible.builtin.template:
+    src: mimir.yaml.j2
+    dest: "{{ monitoring_base_dir }}/conf/mimir.yaml"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Render Loki config
+  ansible.builtin.template:
+    src: loki.yaml.j2
+    dest: "{{ monitoring_base_dir }}/conf/loki.yaml"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Render Tempo config
+  ansible.builtin.template:
+    src: tempo.yaml.j2
+    dest: "{{ monitoring_base_dir }}/conf/tempo.yaml"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Render Grafana datasource provisioning
+  ansible.builtin.template:
+    src: grafana-datasources.yaml.j2
+    dest: "{{ monitoring_base_dir }}/conf/grafana/provisioning/datasources/datasources.yaml"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Render compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_base_dir }}/docker-compose.yml"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Flush handlers (start the stack if it is not running)
+  ansible.builtin.meta: flush_handlers
+
+- name: Start the monitoring stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ monitoring_base_dir }}"
+  become: true
+  register: _compose_up
+  changed_when: "'Started' in _compose_up.stdout or 'Created' in _compose_up.stdout"
+
+- name: Wait for Mimir to be ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_ports.mimir }}/ready"
+    return_content: false
+  register: _mimir_ready
+  until: _mimir_ready.status == 200
+  retries: 40
+  delay: 5
+  changed_when: false
+
+- name: Wait for Loki to be ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_ports.loki }}/ready"
+    return_content: false
+  register: _loki_ready
+  until: _loki_ready.status == 200
+  retries: 40
+  delay: 5
+  changed_when: false
+
+- name: Report endpoints
+  ansible.builtin.debug:
+    msg:
+      - "Mimir:  http://127.0.0.1:{{ monitoring_ports.mimir }}  (cluster pushes to http://{{ monitoring_push_address }}:{{ monitoring_ports.mimir }})"
+      - "Loki:   http://127.0.0.1:{{ monitoring_ports.loki }}  (cluster pushes to http://{{ monitoring_push_address }}:{{ monitoring_ports.loki }})"
+      - "Tempo:  http://127.0.0.1:{{ monitoring_ports.tempo }}"
+      - "Grafana: http://{{ monitoring_push_address }}:{{ monitoring_ports.grafana }}"
+      - "Data:   {{ monitoring_data_dir }}"
+
+- name: Handlers are declared in handlers/main.yml
+  ansible.builtin.meta: noop

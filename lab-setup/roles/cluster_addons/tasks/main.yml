@@ -17,11 +17,36 @@
 - import_tasks: tempo.yaml
   tags: [tempo]
 
-- import_tasks: loki.yaml
-  tags: [loki]
+# Control-plane isolation: give monitoring a high priority so it is evicted last,
+# and (optionally) taint the masters. The taint is OFF by default: with the
+# masters untainted the scheduler can use them for the benchmark, which the
+# cluster needs at this size. See control_plane_isolation.yaml.
+- import_tasks: control_plane_isolation.yaml
+  tags: [control-plane]
 
-- import_tasks: mimir.yaml
-  tags: [mimir]
+# Kubelet reservations. These are what actually protect the system and the
+# control plane when the masters are schedulable: allocatable = capacity minus
+# these. Declarative so a fresh cluster is not born with zero reservations
+# (which is what starved the apiserver on 2026-11-17).
+- import_tasks: kubelet_reservations.yaml
+  tags: [kubelet-reservations]
+
+# ---- In-cluster monitoring is RETIRED (2026-11-18) ----------------------
+# Mimir / Loki / Tempo / Grafana now run OUTSIDE the cluster, on the
+# `monitoring` host (playbook/monitoring.yaml, roles/monitoring). While they
+# were in-cluster, Mimir was OOMKilled repeatedly at its 4 Gi limit while
+# sharing the masters with the benchmark's pods, and the kubelet reservations
+# had cut the masters to 5 cores / 8.2 Gi allocatable.
+#
+# Alloy STAYS (it is the scraper and must reach pod IPs, which are not routable
+# from outside); it now remote-writes to <monitoring_host>:18080 and pushes logs
+# to <monitoring_host>:3100 over the private network. See
+# inventory/group_vars/all/postcluster.yaml for the addresses.
+#
+# These imports are kept, commented out, so the old manifests stay reviewable:
+#   - import_tasks: monitoring_disk.yaml  tags: [monitoring-disk]
+#   - import_tasks: loki.yaml             tags: [loki]
+#   - import_tasks: mimir.yaml            tags: [mimir]
 
 - import_tasks: alloy.yaml
   tags: [alloy]
