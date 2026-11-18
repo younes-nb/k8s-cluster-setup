@@ -14,6 +14,34 @@
   ansible.builtin.set_fact:
     monitoring_push_address: "{{ monitoring_host | default(ansible_host) | default('10.10.1.1') }}"
 
+# The stack runs under `docker compose`, so the host needs both the engine and
+# the v2 compose plugin. `preparing.yaml` only covers the `nodes` group, so a
+# fresh monitoring host arrives with neither.
+- name: Check for Docker
+  ansible.builtin.command: docker --version
+  register: _docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Docker and the compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+    state: present
+    update_cache: true
+  become: true
+  when: _docker_check.rc != 0
+
+- name: Verify docker compose is usable
+  ansible.builtin.command: docker compose version
+  register: _compose_ver
+  changed_when: false
+  retries: 12
+  delay: 5
+  until: _compose_ver.rc == 0
+  become: true
+
 # The role used to only mkdir under {{ monitoring_data_dir }}, so a fresh host
 # put Mimir/Loki on the root filesystem. Format + mount the dedicated disk when
 # monitoring_disk_device is set; skip cleanly when it is not (the path may

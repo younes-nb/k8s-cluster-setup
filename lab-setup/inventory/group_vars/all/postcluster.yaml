@@ -132,7 +132,7 @@ tt_mysql_data_path: "/var/lib/mysql"
 # from outside -- and pushes here over the private network. Ports match the old
 # in-cluster Service ports so 127.0.0.1:18080 / :3100 keep working for every
 # script and tunnel helper.
-monitoring_host: "10.10.1.1"
+monitoring_host: "10.10.1.2"
 monitoring_mimir_port: 18080
 monitoring_loki_port: 3100
 monitoring_tempo_port: 3200

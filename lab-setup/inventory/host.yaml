@@ -15,16 +15,15 @@ all:
     # Monitoring is a SEPARATE logical host from the load generator, because the
     # monitoring stack (Mimir / Loki / Tempo / Grafana) no longer runs inside the
     # cluster: it was moved off the masters so the TrainTicket benchmark can use
-    # that memory. Keeping it a distinct group means it can later be moved to a
-    # dedicated node by changing one variable.
+    # that memory. Keeping it a distinct group means it can later be moved again
+    # by changing one variable.
     #
-    # TODAY loadgen and monitoring are the SAME machine (pc491.emulab.net,
-    # private 10.10.1.1). They are declared separately so the eventual split is
-    # an inventory change, not a role rewrite. `monitoring_host` is the
+    # On the clemson cluster loadgen=10.10.1.1 (clnode075) and monitoring is its
+    # own node, mon1=10.10.1.2 (clnode060). `monitoring_host` is the
     # private-network address the in-cluster Alloy scraper pushes to.
     monitoring:
       hosts:
         mon1:
-          ansible_host: 10.10.1.1
+          ansible_host: 10.10.1.2
       vars:
-        monitoring_host: 10.10.1.1
+        monitoring_host: 10.10.1.2
