@@ -276,6 +276,34 @@
        | rejectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
   loop_control:
     label: "{{ item.metadata.name }}"
+
+# The istio ingress gateway Deployment is applied after the loop above, so it
+# never received an HPA and the cold-reset gate (43 stateless deployments, 43
+# HPAs) failed with hpa_count=42. The old cluster had this HPA; restore it.
+- name: Ensure the gateway HPA exists
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: train-ticket-gateway-istio-hpa
+        namespace: "{{ tt_ns }}"
+      spec:
+        minReplicas: "{{ tt_min_replicas }}"
+        maxReplicas: "{{ tt_max_replicas }}"
+        scaleTargetRef:
+          apiVersion: apps/v1
+          kind: Deployment
+          name: train-ticket-gateway-istio
+        metrics:
+          - type: Resource
+            resource:
+              name: cpu
+              target:
+                type: Utilization
+                averageUtilization: "{{ tt_cpu_avg_utilization }}"
   register: _tt_res
   changed_when: "'resource requirements updated' in _tt_res.stdout"
   failed_when: false
