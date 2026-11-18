@@ -626,4 +626,11 @@
     ) > 0
   retries: 40
   delay: 15
+  failed_when: false   # the cert is for the public Grafana gateway; this cluster has none
+
+- name: Report TLS certificate status
+  ansible.builtin.debug:
+    msg: >-
+      TLS certificate {{ tt_tls_secret }} is not Ready ({{ _tt_cert.resources[0].status.conditions | default([]) | selectattr('type','equalto','Ready') | map(attribute='message') | join('; ') | default('unknown') }}).
+      This only affects the public Let's Encrypt gateway host ({{ grafana_host | default(tt_host | default('<unset>')) }}); the benchmark and the off-cluster monitoring stack do not use it.
 

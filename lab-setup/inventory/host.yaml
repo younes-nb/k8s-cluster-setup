@@ -19,11 +19,17 @@ all:
     # by changing one variable.
     #
     # On the clemson cluster loadgen=10.10.1.1 (clnode075) and monitoring is its
-    # own node, mon1=10.10.1.2 (clnode060). `monitoring_host` is the
-    # private-network address the in-cluster Alloy scraper pushes to.
+    # own node, mon1=10.10.1.2 (clnode060). `monitoring_host` (group_vars) is the
+    # PRIVATE address the in-cluster Alloy scraper pushes to -- it must stay a
+    # 10.10.1.x address because Alloy runs inside the new cluster.
+    #
+    # ansible_host deliberately uses the PUBLIC FQDN: the private 10.10.1.0/24 is
+    # used by BOTH the old and the new cluster, so a bare 10.10.1.2 resolves to
+    # whichever network the controller is on (2026-11-18: running this playbook
+    # from the old loadgen deployed the stack onto the old master1).
     monitoring:
       hosts:
         mon1:
-          ansible_host: 10.10.1.2
+          ansible_host: clnode060.clemson.cloudlab.us
       vars:
         monitoring_host: 10.10.1.2

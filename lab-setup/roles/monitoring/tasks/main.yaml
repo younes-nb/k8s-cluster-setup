@@ -95,6 +95,22 @@
     - {path: "{{ monitoring_data_dir }}/tempo", owner: "10001", group: "10001"}
     - {path: "{{ monitoring_data_dir }}/grafana", owner: "472", group: "472"}
   become: true
+  failed_when: false
+
+# On NFS with root_squash the chown above silently fails (root maps to nobody),
+# and the containers then cannot write at all. Fall back to world-writable
+# directories, which is acceptable on this private cluster.
+- name: Ensure the data dirs are writable by the container UIDs
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0777"
+  loop:
+    - "{{ monitoring_data_dir }}/mimir"
+    - "{{ monitoring_data_dir }}/loki"
+    - "{{ monitoring_data_dir }}/tempo"
+    - "{{ monitoring_data_dir }}/grafana"
+  become: true
 
 - name: Render Mimir config
   ansible.builtin.template:

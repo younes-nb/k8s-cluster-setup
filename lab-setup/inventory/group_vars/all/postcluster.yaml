@@ -137,3 +137,10 @@ monitoring_mimir_port: 18080
 monitoring_loki_port: 3100
 monitoring_tempo_port: 3200
 monitoring_grafana_port: 3000
+
+# Monitoring data lives on the monitoring host, on its own dedicated disk.
+# (Note: /share is a 500 G NFS mount but it is exported READ-ONLY on mon1, and
+# the 57 G root disk would not hold the 60-day retention at ~2 GB/day. mon1 has
+# an unused 931 GB /dev/sdb, so the role formats and mounts that.)
+monitoring_data_dir: "/var/lib/monitoring"
+monitoring_disk_device: "/dev/sdb"

@@ -39,9 +39,11 @@ compactor:
 limits_config:
   retention_period: {{ monitoring_retention }}
   allow_structured_metadata: false
-  # Loki's default rejects samples older than 7 days. Alloy's
-  # loki.source.kubernetes tails each pod from the start of its log on (re)start,
-  # and the long-lived mongo pods have logs going back to 2026-11-11, so every
-  # batch was rejected with HTTP 400 ("timestamp too old") and dropped. 0
-  # disables the check; the compactor's retention_period still bounds storage.
-  reject_old_samples_max_age: 0
+  # Loki rejects samples older than this. Alloy's loki.source.kubernetes tails
+  # each pod from the start of its log on (re)start, and the long-lived mongo
+  # pods have logs going back days, so the default (7 d) dropped those batches.
+  #
+  # NOTE: 0 does NOT disable the check in Loki 3.x -- it means "reject anything
+  # older than now", so every batch came back HTTP 400 "timestamp too old"
+  # (2026-11-18, new cluster). Use a value far beyond the retention window.
+  reject_old_samples_max_age: 9999h

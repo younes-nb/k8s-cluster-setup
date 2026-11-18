@@ -20,12 +20,20 @@ LABEL=${LABEL:-monitoring}
 say() { echo "$*"; }
 
 if [ -z "$DEV" ]; then
-  if findmnt -rn --target "$MNT" >/dev/null 2>&1; then
-    say "already-mounted $MNT ($(findmnt -rn -o SOURCE --target "$MNT"))"
-    exit 0
+  # No dedicated block device: the path may legitimately be a directory on an
+  # existing mount (e.g. /share/monitoring on the 500 G NFS mount). Create it
+  # and report which filesystem it lands on; only the root filesystem is worth
+  # a warning, and even then it is not fatal -- a big local root disk is a
+  # valid choice.
+  mkdir -p "$MNT"
+  SRC=$(df --output=source "$MNT" 2>/dev/null | tail -1 | tr -d ' ')
+  ROOTSRC=$(df --output=source / 2>/dev/null | tail -1 | tr -d ' ')
+  if [ "$SRC" = "$ROOTSRC" ]; then
+    say "WARNING: $MNT is on the root filesystem ($SRC); make sure it has room for the retention window"
+  else
+    say "using existing mount $SRC for $MNT"
   fi
-  say "DEV not configured and $MNT is not a separate mount -- monitoring data will land on the root filesystem"
-  exit 1
+  exit 0
 fi
 
 if [ ! -b "$DEV" ]; then

@@ -37,20 +37,18 @@
   when: control_plane_taint | bool
 
 - name: Remove the control-plane taint (default)
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: absent
-    definition:
-      apiVersion: v1
-      kind: Node
-      metadata:
-        name: "{{ item }}"
-      spec:
-        taints:
-          - key: node-role.kubernetes.io/control-plane
-            effect: NoSchedule
+  # NOTE: this must NOT use kubernetes.core.k8s with state=absent on a Node --
+  # that deletes the whole Node object, not the taint (2026-11-18: it removed
+  # master1..3 from the cluster and their kubelets could not re-register until
+    # restarted). `kubectl taint <node> <key>-` is the surgical operation.
+  ansible.builtin.command: >
+    kubectl --kubeconfig={{ kubeconfig_path }} taint nodes {{ item }}
+    node-role.kubernetes.io/control-plane:NoSchedule-
   loop: "{{ control_plane_nodes }}"
   when: not (control_plane_taint | bool)
+  register: _cp_taint_rm
+  changed_when: "'untainted' in (_cp_taint_rm.stdout | default(''))"
+  failed_when: false
 
 - name: Give monitoring pods a high priority so node pressure evicts them last
   kubernetes.core.k8s:
