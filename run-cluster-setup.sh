@@ -38,8 +38,14 @@ ks_python_ok() {
 }
 
 # True if the kubespray venv exists and was built with Python 3.12.
+# Also validates pip itself: a venv copied between hosts keeps a working
+# `python` symlink but a `pip` whose shebang points at the OLD absolute path,
+# which then silently falls through to the system python 3.10 and cannot install
+# ansible==12.3.0 (2026-11-18, moved kubespray/.venv).
 ks_venv_ok() {
-  [ -x "${KS_VENV}/bin/python" ] && ks_python_ok "${KS_VENV}/bin/python"
+  [ -x "${KS_VENV}/bin/python" ] || return 1
+  ks_python_ok "${KS_VENV}/bin/python" || return 1
+  "${KS_VENV}/bin/pip" --version >/dev/null 2>&1
 }
 
 step_banner() {

@@ -1,3 +1,21 @@
+---
+# Collections required by lab-setup roles.
+#
+# kubernetes.core  — every kubernetes.core.k8s / k8s_info / helm task.
+# ansible.posix    — preparing_server uses the short-form `mount` (fstab.yml)
+#                    and `sysctl` (tuning.yaml) modules.
+# community.general — preparing_server uses community.general.timezone and
+#                    community.general.modprobe. Missing entirely before
+#                    2026-11-18: preparing.yaml aborted on a fresh host with
+#                    "couldn't resolve module/action 'community.general.timezone'".
+#
+# Versions: the system Python here is 3.10, so lab-setup runs ansible-core 2.17.x
+# (2.18+ needs Python >= 3.11). community.general 10+ requires ansible-core
+# >= 2.18, so it is capped below 10; ansible.posix 2.2.2 supports 2.17.
 collections:
   - name: kubernetes.core
-
+    version: 3.2.0
+  - name: ansible.posix
+    version: ">=1.5.0"
+  - name: community.general
+    version: ">=8.0.0,<10.0.0"
