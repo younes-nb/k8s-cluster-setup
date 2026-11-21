@@ -42,14 +42,14 @@
   loop:
     - name: Mimir
       type: prometheus
-      url: "http://mimir.{{ monitoring_ns }}.svc.cluster.local:8080/prometheus"
+      url: "http://{{ monitoring_host }}:{{ monitoring_mimir_port }}/prometheus"
       is_default: true
     - name: Loki
       type: loki
-      url: "http://loki.{{ monitoring_ns }}.svc.cluster.local:3100"
+      url: "http://{{ monitoring_host }}:{{ monitoring_loki_port }}"
     - name: Tempo
       type: tempo
-      url: "http://tempo.{{ monitoring_ns }}.svc.cluster.local:3200"
+      url: "http://{{ monitoring_host }}:{{ monitoring_tempo_port | default(3200) }}"
   loop_control:
     label: "{{ item.name }}"
   when: >-

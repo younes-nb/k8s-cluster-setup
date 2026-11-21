@@ -69,14 +69,14 @@ data:
       }
     }
 
-    prometheus.scrape "ksm" {
-      targets = [
-        {"__address__" = "prometheus-stack-kube-state-metrics.{{ monitoring_ns }}.svc.cluster.local:8080"},
-      ]
-      forward_to = [prometheus.remote_write.mimir.receiver]
-      scrape_interval = "{{ alloy_scrape_interval }}"
-      scrape_timeout = "{{ alloy_scrape_interval }}"
-    }
+    // NOTE: no explicit kube-state-metrics scrape here. The kube-prometheus-stack
+    // chart ships a ServiceMonitor for KSM which
+    // `prometheus.operator.servicemonitors "all"` already picks up (job =
+    // "kube-state-metrics"). The hand-written `prometheus.scrape "ksm"` block
+    // that used to live here scraped the SAME target a second time (job =
+    // "prometheus.scrape.ksm"), so every kube_* series existed twice and naive
+    // `sum()` queries double-counted — e.g. cluster CPU capacity read 480 cores
+    // instead of 240 (2026-11-19). Delete one of the two; keep the ServiceMonitor.
 
     prometheus.exporter.unix "node_exporter" {
       rootfs_path = "/host"
@@ -146,7 +146,7 @@ data:
     }
     otelcol.exporter.otlp "tempo" {
       client {
-        endpoint = "tempo.{{ monitoring_ns }}.svc.cluster.local:4317"
+        endpoint = "{{ monitoring_host }}:4317"
         tls {
           insecure = true
           insecure_skip_verify = true
@@ -189,6 +189,12 @@ spec:
         - {name: proc, mountPath: /host/proc, readOnly: true}
         - {name: sys, mountPath: /host/sys, readOnly: true}
         - {name: host-root, mountPath: /host, readOnly: true}
+        # Persist the WAL / positions file. Without this the pod's
+        # /var/lib/alloy/data lives in the container filesystem, so EVERY Alloy
+        # restart replays every pod's log from the beginning (2026-11-19: a
+        # restart cost ~3 h of "entry too far behind" rejections and a gap in
+        # Loki while it caught up).
+        - {name: data, mountPath: /var/lib/alloy/data}
         resources:
           requests: {cpu: "200m", memory: "2Gi"}
           limits: {cpu: "2000m", memory: "8Gi"}  # twice OOMKilled mid-PBScaler-run: 855 tt pods (paper scale-outs) double the per-pod stream/scrape load; 4Gi also OOMKilled at 07:37Z
@@ -209,6 +215,25 @@ spec:
       - name: host-root
         hostPath:
           path: /
+      # Alloy's own state (WAL + positions). Small and node-local: Alloy is a
+      # Deployment, so if it moves nodes the positions file goes with it and the
+      # new pod replays from the beginning — acceptable, but the common case
+      # (restart on the same node) no longer loses hours of log position.
+      - name: data
+        persistentVolumeClaim:
+          claimName: alloy-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: alloy-data
+  namespace: {{ monitoring_ns }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ storage_class }}
+  resources:
+    requests:
+      storage: 5Gi
 ---
 apiVersion: v1
 kind: Service

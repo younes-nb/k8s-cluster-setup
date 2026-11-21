@@ -97,18 +97,22 @@
           size: "{{ grafana_pvc_size }}"
           finalizers: ["kubernetes.io/pvc-protection"]
         additionalDataSources:
+          # These point at the monitoring HOST, not at in-cluster Services: Mimir,
+          # Loki and Tempo were all retired from the cluster (2026-11-18/19) and
+          # run as containers on `monitoring_host`. The old in-cluster URLs
+          # silently produced a Grafana with three dead datasources.
           - name: Mimir
             type: prometheus
-            url: "http://mimir.{{ monitoring_ns }}.svc.cluster.local:8080/prometheus"
+            url: "http://{{ monitoring_host }}:{{ monitoring_mimir_port }}/prometheus"
             access: proxy
             isDefault: true
           - name: Loki
             type: loki
-            url: "http://loki.{{ monitoring_ns }}.svc.cluster.local:3100"
+            url: "http://{{ monitoring_host }}:{{ monitoring_loki_port }}"
             access: proxy
           - name: Tempo
             type: tempo
-            url: "http://tempo.{{ monitoring_ns }}.svc.cluster.local:3200"
+            url: "http://{{ monitoring_host }}:{{ monitoring_tempo_port | default(3200) }}"
             access: proxy
 
       alertmanager:

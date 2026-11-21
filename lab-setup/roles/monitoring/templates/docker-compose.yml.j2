@@ -15,7 +15,10 @@ services:
       - ./conf/mimir.yaml:/etc/mimir/mimir.yaml:ro
       - {{ monitoring_data_dir }}/mimir:/mimir
     restart: unless-stopped
-    mem_limit: 8g
+    # 8g was too small: during high-churn runs the ingester holds millions
+    # of active istio series and thrashes (pushes time out, the ring marks
+    # the ingester unhealthy). mon1 has 251 GiB, so give it room.
+    mem_limit: 48g
 
   loki:
     image: {{ monitoring_loki_image }}
@@ -35,6 +38,11 @@ services:
     container_name: tempo
     ports:
       - "{{ monitoring_ports.tempo }}:3200"
+      # OTLP gRPC/HTTP must be reachable from inside the cluster (Alloy pushes
+      # traces here). Without these, Tempo accepts nothing and the traces pile
+      # up in the retired in-cluster Tempo instead (2026-11-19).
+      - "4317:4317"
+      - "4318:4318"
     volumes:
       - ./conf/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - {{ monitoring_data_dir }}/tempo:/var/tempo

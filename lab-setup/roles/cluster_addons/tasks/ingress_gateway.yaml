@@ -1,0 +1,77 @@
+---
+# Classic Istio ingress gateway (istio/gateway Helm chart) in istio-system.
+#
+# This replaces the retired in-namespace Gateway API proxy
+# (`train-ticket-gateway-istio`, created by a Gateway CR in the train-ticket
+# namespace). The ingress is shared infrastructure — it fronts TrainTicket, the
+# public Grafana host and the ACME solver — so it belongs with the mesh, not in
+# the application namespace (2026-11-21).
+#
+# Routing is the classic Istio model: an Istio `Gateway` + `VirtualService`
+# (see templates/gateway.yaml.j2), not the Kubernetes Gateway API.
+- name: Install/upgrade the Istio ingress gateway
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path }}"
+    name: istio-ingressgateway
+    chart_ref: "{{ istio_repo_name }}/gateway"
+    chart_version: "{{ gateway_chart_version }}"
+    release_namespace: "{{ istio_ns }}"
+    create_namespace: false
+    wait: true
+    values:
+      replicaCount: 1
+      autoscaling:
+        enabled: true
+        minReplicas: "{{ gateway_min_replicas }}"
+        maxReplicas: "{{ gateway_max_replicas }}"
+        targetCPUUtilizationPercentage: "{{ gateway_cpu_target }}"
+      resources:
+        requests: {cpu: "100m", memory: "128Mi"}
+        limits: {cpu: "2000m", memory: "1024Mi"}
+      service:
+        type: LoadBalancer
+        externalIPs:
+          - "{{ cloudlab_private_ips.master1 }}"
+
+- name: Pin the ingress gateway NodePorts
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: istio-ingressgateway
+        namespace: "{{ istio_ns }}"
+      spec:
+        ports:
+          - name: status-port
+            port: 15021
+            targetPort: 15021
+            protocol: TCP
+            nodePort: {{ gateway_nodeport_status }}
+          - name: http2
+            port: 80
+            targetPort: 80
+            protocol: TCP
+            nodePort: {{ gateway_nodeport_http }}
+          - name: https
+            port: 443
+            targetPort: 443
+            protocol: TCP
+            nodePort: {{ gateway_nodeport_https }}
+  register: _gw_ports
+
+- name: Wait for the ingress gateway to be available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: istio-ingressgateway
+    namespace: "{{ istio_ns }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: _gw_dep
+  until: >
+    _gw_dep.resources | length > 0 and
+    (_gw_dep.resources[0].status.availableReplicas | default(0)) >= 1
+  retries: 30
+  delay: 10

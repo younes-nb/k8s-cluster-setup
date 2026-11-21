@@ -14,6 +14,24 @@
 - import_tasks: istio.yaml
   tags: [istio]
 
+# Classic Istio ingress gateway (istio/gateway chart) in istio-system. Must run
+# after istio: it consumes the chart repo istio.yaml adds, and its pods are
+# selected by the Istio Gateway in templates/gateway.yaml.j2.
+- import_tasks: ingress_gateway.yaml
+  tags: [gateway]
+
+# Tracing (Istio Telemetry sampler only). The Tempo SERVER is RETIRED in-cluster
+# (2026-11-19): it wrote to a `local-path` PVC, i.e. to whatever worker the
+# scheduler picked, and 43 GB of trace blocks pushed worker1 to the kubelet
+# eviction threshold mid-run. Tempo now runs on the monitoring host like
+# Mimir/Loki/Grafana, with OTLP 4317 published and istiod/Alloy pointing at
+# <monitoring_host>:4317.
+#
+# The old task that also applied the Tempo ConfigMap/Deployment/PVC/Service is
+# retired. If it is ever needed again, note that its
+# `backend_worker.compaction.block_retention` setting does NOT enforce retention
+# without a backend-scheduler ("no jobs found"), so a single-binary Tempo will
+# grow its node-local disk without bound.
 - import_tasks: tempo.yaml
   tags: [tempo]
 

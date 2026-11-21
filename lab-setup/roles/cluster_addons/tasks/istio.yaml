@@ -51,7 +51,10 @@
           - name: otel-tempo
             opentelemetry:
               port: 4317
-              service: "tempo.{{ monitoring_ns }}.svc.cluster.local"
+              # Tempo runs OUTSIDE the cluster on the monitoring host (the
+              # in-cluster Tempo wrote to a node-local PVC and filled a worker
+              # disk). Alloy and istiod both send OTLP straight to it.
+              service: "{{ monitoring_host }}"
       pilot:
         serviceMonitor:
           enabled: true

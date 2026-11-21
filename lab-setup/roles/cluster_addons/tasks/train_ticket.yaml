@@ -220,6 +220,21 @@
               # expects to keep forever -> SocketException / "Prematurely reached
               # end of stream" -> HTTP 500. The previous version of this rule set
               # only maxConnections/connectTimeout despite its name.
+              # Disabling the reap alone is NOT sufficient (2026-11-20): with an
+              # idle namespace the driver still ended up holding a dead pooled
+              # connection, and the first request after a cold reset returned
+              # 500 "Prematurely reached end of stream". Two measures make the
+              # pool self-healing:
+              #   * tcpKeepalive - Envoy probes idle upstreams, so a silently
+              #     dead connection is detected in ~60 s instead of hanging;
+              #   * maxConnectionDuration - recycle connections before anything
+              #     else (conntrack table, node reboot, sidecar restart) can reap
+              #     them unnoticed.
+              maxConnectionDuration: 30m
+              tcpKeepalive:
+                time: 30s
+                interval: 10s
+                probes: 3
 
 - name: Get Train-Ticket deployments
   kubernetes.core.k8s_info:
@@ -280,34 +295,6 @@
 # The istio ingress gateway Deployment is applied after the loop above, so it
 # never received an HPA and the cold-reset gate (43 stateless deployments, 43
 # HPAs) failed with hpa_count=42. The old cluster had this HPA; restore it.
-- name: Ensure the gateway HPA exists
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
-    definition:
-      apiVersion: autoscaling/v2
-      kind: HorizontalPodAutoscaler
-      metadata:
-        name: train-ticket-gateway-istio-hpa
-        namespace: "{{ tt_ns }}"
-      spec:
-        minReplicas: "{{ tt_min_replicas }}"
-        maxReplicas: "{{ tt_max_replicas }}"
-        scaleTargetRef:
-          apiVersion: apps/v1
-          kind: Deployment
-          name: train-ticket-gateway-istio
-        metrics:
-          - type: Resource
-            resource:
-              name: cpu
-              target:
-                type: Utilization
-                averageUtilization: "{{ tt_cpu_avg_utilization }}"
-  register: _tt_res
-  changed_when: "'resource requirements updated' in _tt_res.stdout"
-  failed_when: false
-
 - name: Set DB resource limits ({{ tt_db_lim_cpu }}/{{ tt_db_lim_mem }}; requests stay upstream)
   ansible.builtin.command: >
     kubectl --kubeconfig="{{ kubeconfig_path }}"
@@ -469,151 +456,6 @@
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
     template: gateway.yaml.j2
-
-- name: Create/Update internal HTTPRoute (private network HTTP, no hostname)
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    definition:
-      apiVersion: gateway.networking.k8s.io/v1
-      kind: HTTPRoute
-      metadata:
-        name: train-ticket-route-internal
-        namespace: "{{ tt_ns }}"
-      spec:
-        parentRefs:
-        - name: train-ticket-gateway
-          port: 80
-        rules:
-        - matches:
-          - path:
-              type: PathPrefix
-              value: /
-          backendRefs:
-          - name: ts-ui-dashboard
-            port: 8080
-
-- name: Create/Update public HTTPRoute (requires tt_host / base_domain)
-  when: tt_host is defined and tt_host
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    definition:
-      apiVersion: gateway.networking.k8s.io/v1
-      kind: HTTPRoute
-      metadata:
-        name: train-ticket-route
-        namespace: "{{ tt_ns }}"
-      spec:
-        parentRefs:
-        - name: train-ticket-gateway
-          port: 443
-        hostnames:
-        - "{{ tt_host }}"
-        rules:
-        - matches:
-          - path:
-              type: PathPrefix
-              value: /
-          backendRefs:
-          - name: ts-ui-dashboard
-            port: 8080
-
-- name: Pin Gateway Service NodePorts and public externalIP
-  ansible.builtin.shell: |
-    kubectl --kubeconfig="{{ kubeconfig_path }}" -n "{{ tt_ns }}" get svc train-ticket-gateway-istio -o json | python3 -c "
-    import json,subprocess,sys
-    svc = json.load(sys.stdin)
-    want = {80: {{ gateway_nodeport_http }}, 443: {{ gateway_nodeport_https }}}
-    ops = []
-    for i, p in enumerate(svc['spec']['ports']):
-        if p['port'] in want and p.get('nodePort') != want[p['port']]:
-            ops.append({'op': 'replace', 'path': f\"/spec/ports/{i}/nodePort\", 'value': want[p['port']]})
-    want_ips = [{% if (tt_host is defined and tt_host) or (grafana_host is defined and grafana_host) %}'{{ cloudlab_ips.master1 }}'{% endif %}]
-    has_ips = svc['spec'].get('externalIPs') or []
-    if has_ips != want_ips:
-        ops.append({'op': 'replace' if has_ips else 'add', 'path': '/spec/externalIPs', 'value': want_ips})
-    if ops:
-        subprocess.run(['kubectl', '--kubeconfig={{ kubeconfig_path }}', '-n', '{{ tt_ns }}', 'patch', 'svc', 'train-ticket-gateway-istio', '--type=json', '-p', json.dumps(ops)], check=True)
-        print('patched')
-    "
-  args:
-    executable: /bin/bash
-  register: _gw_nodeports
-  changed_when: "'patched' in _gw_nodeports.stdout"
-  failed_when: false
-
-- name: Allow tt_ns HTTPRoutes to reference the grafana service (ReferenceGrant)
-  when: grafana_host is defined and grafana_host
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    definition:
-      apiVersion: gateway.networking.k8s.io/v1beta1
-      kind: ReferenceGrant
-      metadata:
-        name: grafana-from-train-ticket
-        namespace: "{{ monitoring_ns }}"
-      spec:
-        from:
-        - group: gateway.networking.k8s.io
-          kind: HTTPRoute
-          namespace: "{{ tt_ns }}"
-        to:
-        - group: ""
-          kind: Service
-          name: prometheus-stack-grafana
-
-- name: Create/Update public Grafana HTTPSRoute (requires grafana_host)
-  when: grafana_host is defined and grafana_host
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    definition:
-      apiVersion: gateway.networking.k8s.io/v1
-      kind: HTTPRoute
-      metadata:
-        name: grafana-public
-        namespace: "{{ tt_ns }}"
-      spec:
-        parentRefs:
-        - name: train-ticket-gateway
-          port: 443
-        hostnames:
-        - "{{ grafana_host }}"
-        rules:
-        - matches:
-          - path:
-              type: PathPrefix
-              value: /
-          backendRefs:
-          - name: prometheus-stack-grafana
-            namespace: "{{ monitoring_ns }}"
-            port: 3000
-
-- name: Redirect public grafana HTTP to HTTPS
-  when: grafana_host is defined and grafana_host
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    definition:
-      apiVersion: gateway.networking.k8s.io/v1
-      kind: HTTPRoute
-      metadata:
-        name: grafana-public-http-redirect
-        namespace: "{{ tt_ns }}"
-      spec:
-        parentRefs:
-        - name: train-ticket-gateway
-          port: 80
-        hostnames:
-        - "{{ grafana_host }}"
-        rules:
-        - filters:
-          - type: RequestRedirect
-            requestRedirect:
-              scheme: https
-              statusCode: 301
 
 - name: Create/Update Certificate for Gateway TLS listener (public hosts only)
   when: (tt_host is defined and tt_host) or (grafana_host is defined and grafana_host)

@@ -15,12 +15,12 @@
           privateKeySecretRef:
             name: "{{ acme_private_key_secret }}"
           solvers:
-            - http01:
-                gatewayHTTPRoute:
-                  parentRefs:
-                    - name: train-ticket-gateway
-                      namespace: "{{ tt_ns }}"
-                      kind: Gateway
+            # The Gateway API HTTPRoute solver was removed: the in-namespace
+            # Gateway CR is gone (the ingress is now the classic
+            # istio-ingressgateway in {{ istio_ns }}). Note that the public
+            # HTTPS host is not attainable on this private LAN either way --
+            # Let's Encrypt cannot reach the challenge host, so the Certificate
+            # stays pending (unchanged since 2026-11-18).
             - http01:
                 ingress:
                   class: "{{ ingress_class }}"

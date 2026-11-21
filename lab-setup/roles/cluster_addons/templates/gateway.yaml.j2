@@ -1,21 +1,78 @@
-apiVersion: gateway.networking.k8s.io/v1
+---
+# Classic Istio ingress for the cluster: an Istio `Gateway` selecting the
+# istio-ingressgateway pods (installed by tasks/ingress_gateway.yaml) plus the
+# VirtualServices that bind backends to it.
+#
+# This replaces the Kubernetes Gateway API resources that used to live here. The
+# ingress is shared infrastructure (TrainTicket + the public Grafana host), so it
+# belongs in {{ istio_ns }}, not in the application namespace (2026-11-21).
+apiVersion: networking.istio.io/v1
 kind: Gateway
 metadata:
   name: train-ticket-gateway
-  namespace: "{{ tt_ns }}"
+  namespace: {{ istio_ns }}
 spec:
-  gatewayClassName: "{{ gateway_class }}"
-  listeners:
-  - name: http
-    protocol: HTTP
-    port: 80
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
 {% if (tt_host is defined and tt_host) or (grafana_host is defined and grafana_host) %}
-  - name: https
-    protocol: HTTPS
-    port: 443
+  # HTTPS is only useful when a certificate actually exists. The ACME
+  # Certificate for the public host has been pending since 2026-11-18 (the
+    # challenge host is not reachable from Let's Encrypt on this private LAN),
+  # so this listener is skipped unless a Secret with that name is present.
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    hosts:
+    - "*"
     tls:
-      mode: Terminate
-      certificateRefs:
-      - kind: Secret
-        name: "{{ tt_tls_secret }}"
+      mode: SIMPLE
+      credentialName: "{{ tt_tls_secret }}"
+{% endif %}
+---
+# Catch-all: everything that is not matched by a more specific VirtualService
+# goes to the TrainTicket UI.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: train-ticket-route
+  namespace: {{ tt_ns }}
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - {{ istio_ns }}/train-ticket-gateway
+  http:
+  - route:
+    - destination:
+        host: ts-ui-dashboard.{{ tt_ns }}.svc.cluster.local
+        port:
+          number: 8080
+{% if grafana_host is defined and grafana_host %}
+---
+# Public Grafana host. Kept as its own VirtualService so the catch-all above
+# does not swallow it (Istio matches the most specific host).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: grafana-public
+  namespace: {{ monitoring_ns }}
+spec:
+  hosts:
+  - "{{ grafana_host }}"
+  gateways:
+  - {{ istio_ns }}/train-ticket-gateway
+  http:
+  - route:
+    - destination:
+        host: prometheus-stack-grafana.{{ monitoring_ns }}.svc.cluster.local
+        port:
+          number: 3000
 {% endif %}

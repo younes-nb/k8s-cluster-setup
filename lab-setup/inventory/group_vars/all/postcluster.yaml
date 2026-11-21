@@ -1,7 +1,15 @@
 kubeconfig_path: /etc/kubernetes/admin.conf
-gateway_class: "istio"
+# Classic Istio ingress gateway (istio/gateway Helm chart) in istio-system.
+# Replaces the retired in-namespace Gateway API proxy (2026-11-21).
+gateway_chart_version: "1.30.5"
+gateway_min_replicas: 1
+gateway_max_replicas: 8
+gateway_cpu_target: 80
+gateway_nodeport_status: 31588
 gateway_nodeport_http: 30080
 gateway_nodeport_https: 30081
+# Retired: the Gateway API proxy this used to select is gone.
+gateway_class: "istio"
 gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml"
 ingress_class: "istio"
 storage_class: "local-path"

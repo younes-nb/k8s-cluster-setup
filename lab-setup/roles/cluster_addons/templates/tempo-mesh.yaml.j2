@@ -1,17 +1,11 @@
 ---
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: tempo-plaintext
-  namespace: {{ istio_ns }}
-spec:
-  host: tempo.{{ monitoring_ns }}.svc.cluster.local
-  exportTo:
-  - "*"
-  trafficPolicy:
-    tls:
-      mode: DISABLE
----
+# Istio tracing resources. The Tempo server itself is NOT deployed here any
+# more — it runs on the monitoring host (playbook/monitoring.yaml). See
+# tasks/tempo.yaml for why.
+#
+# Only the Telemetry resource is applied: it sets the sampling percentage that
+# decides how many spans istiod forwards to the `otel-tempo` provider
+# (tasks/istio.yaml, <monitoring_host>:4317).
 apiVersion: telemetry.istio.io/v1
 kind: Telemetry
 metadata:
@@ -22,4 +16,3 @@ spec:
   - providers:
     - name: otel-tempo
     randomSamplingPercentage: {{ tempo_sampling_pct }}
-

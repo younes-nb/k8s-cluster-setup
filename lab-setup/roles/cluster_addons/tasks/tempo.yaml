@@ -1,38 +1,15 @@
 ---
-- name: Apply Tempo manifests (ConfigMap, Deployment, PVC, Service)
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
-    template: tempo.yaml.j2
-  register: _tempo_cfg
-
-- name: Apply Tempo mesh resources (DestinationRule, Telemetry sampler)
+# Tracing resources only. The in-cluster Tempo Deployment/PVC/Service are gone:
+# Tempo now runs on the monitoring host like Mimir/Loki/Grafana (its 10 GiB
+# local-path PVC held 43 GB of trace blocks on worker1 and drove the node to the
+# kubelet eviction threshold on 2026-11-19).
+#
+# What remains here is the Istio side: the sampling Telemetry. istiod's
+# `otel-tempo` extensionProvider (tasks/istio.yaml) and Alloy both point at
+# <monitoring_host>:4317.
+- name: Apply tracing resources (Istio Telemetry sampler)
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ kubeconfig_path }}"
     template: tempo-mesh.yaml.j2
-
-- name: Wait for Tempo deployment to be available
-  kubernetes.core.k8s_info:
-    api_version: apps/v1
-    kind: Deployment
-    name: tempo
-    namespace: "{{ monitoring_ns }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-  register: _tempo_dep
-  until: >
-    _tempo_dep.resources | length > 0 and
-    (_tempo_dep.resources[0].status.availableReplicas | default(0)) >=
-    (_tempo_dep.resources[0].spec.replicas | default(1))
-  retries: 30
-  delay: 10
-
-
-- name: Restart Tempo on config change
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ monitoring_ns }}"
-    rollout restart deployment/tempo
-  when: _tempo_cfg is changed
-  changed_when: true
-  failed_when: false
+  register: _tracing_cfg
