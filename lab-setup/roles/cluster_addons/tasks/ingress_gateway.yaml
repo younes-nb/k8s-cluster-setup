@@ -19,12 +19,11 @@
     create_namespace: false
     wait: true
     values:
-      replicaCount: 1
+      # Fixed fleet, no HPA: the ingress is shared infrastructure and must not
+      # become the throughput ceiling. Raise gateway_replicas if it saturates.
+      replicaCount: "{{ gateway_replicas }}"
       autoscaling:
-        enabled: true
-        minReplicas: "{{ gateway_min_replicas }}"
-        maxReplicas: "{{ gateway_max_replicas }}"
-        targetCPUUtilizationPercentage: "{{ gateway_cpu_target }}"
+        enabled: false
       resources:
         requests: {cpu: "100m", memory: "128Mi"}
         limits: {cpu: "2000m", memory: "1024Mi"}
@@ -61,6 +60,17 @@
             protocol: TCP
             nodePort: {{ gateway_nodeport_https }}
   register: _gw_ports
+
+- name: Remove any leftover ingress gateway HPA
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: absent
+    api_version: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    name: istio-ingressgateway
+    namespace: "{{ istio_ns }}"
+  register: _gw_hpa_rm
+  failed_when: false
 
 - name: Wait for the ingress gateway to be available
   kubernetes.core.k8s_info:

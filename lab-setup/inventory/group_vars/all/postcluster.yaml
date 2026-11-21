@@ -2,6 +2,9 @@ kubeconfig_path: /etc/kubernetes/admin.conf
 # Classic Istio ingress gateway (istio/gateway Helm chart) in istio-system.
 # Replaces the retired in-namespace Gateway API proxy (2026-11-21).
 gateway_chart_version: "1.30.5"
+# The ingress gateway runs a FIXED number of pods: no HPA. It is shared
+# infrastructure and must not become the throughput ceiling (2026-11-21).
+gateway_replicas: 12
 gateway_min_replicas: 1
 gateway_max_replicas: 8
 gateway_cpu_target: 80
@@ -115,7 +118,9 @@ tt_repo_version: "0.0.4"
 tt_clone_dir: "/tmp/train-ticket"
 tt_enable_istio_injection: true
 tt_min_replicas: 1
-tt_max_replicas: 8
+# Raised 8 -> 10 (2026-11-21): the per-deployment replica ceiling, not node
+# capacity, was the binding constraint at high load.
+tt_max_replicas: 10
 tt_cpu_avg_utilization: 80
 tt_host: ""
 tt_tls_secret: "trainticket-tls"
