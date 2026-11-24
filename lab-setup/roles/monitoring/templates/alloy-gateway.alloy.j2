@@ -73,8 +73,8 @@ prometheus.scrape "backends" {
 }
 
 // External host exporters: the load generator and the monitoring node are not
-# Kubernetes nodes, so their node_exporter is scraped here. The six cluster
-# nodes are covered by the in-cluster Alloy node collector.
+// Kubernetes nodes, so their node_exporter is scraped here. The six cluster
+// nodes are covered by the in-cluster Alloy node collector.
 prometheus.scrape "external_hosts" {
   targets = [
     {"__address__" = "{{ cloudlab_private_ips.loadgen }}:9100", "instance" = "loadgen", "node" = "loadgen"},
@@ -87,7 +87,7 @@ prometheus.scrape "external_hosts" {
 }
 
 // The application VIP, probed from the monitoring host: the cheapest possible
-# end-to-end check that the gateway answers.
+// end-to-end check that the gateway answers.
 prometheus.exporter.blackbox "gateway" {
   config = "{modules: {http_2xx: {prober: http, timeout: 4s}}}"
   target {
