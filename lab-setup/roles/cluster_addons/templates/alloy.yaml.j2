@@ -53,10 +53,15 @@ data:
       forward_to = [prometheus.remote_write.mimir.receiver]
     }
 
+    // One kubelet target per Kubernetes node. The inventory `nodes` group also
+    // contains `loadgen`, which is NOT a Kubernetes node and has no kubelet, so
+    // it is filtered out by the "not in" test below.
     prometheus.scrape "kubelet" {
       targets = [
-        {% for node in groups['nodes'] | difference(['loadgen']) %}
+        {% for node in groups['nodes'] %}
+        {% if node not in ['loadgen'] %}
         {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/{{ node }}/proxy/metrics/cadvisor", "node" = "{{ node }}"},
+        {% endif %}
         {% endfor %}
       ]
       forward_to = [prometheus.remote_write.mimir.receiver]

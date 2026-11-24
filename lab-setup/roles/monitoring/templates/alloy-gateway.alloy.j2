@@ -1,0 +1,112 @@
+// OTLP gateway for the whole lab, hosted on the monitoring node.
+//
+// Beyla, the Envoy Gateway and any other instrumented workload push OTLP here
+// over the private network. Traces go to Tempo, metrics to Mimir. This replaces
+// the in-cluster Alloy OTLP receiver and Tempo's published 4317.
+otelcol.receiver.otlp "beyla" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.processor.transform.identity.input]
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+otelcol.processor.transform "identity" {
+  error_mode = "ignore"
+  metric_statements {
+    context = "datapoint"
+    statements = [
+      "set(attributes[\"service_name\"], resource.attributes[\"service.name\"]) where resource.attributes[\"service.name\"] != nil",
+      "set(attributes[\"service_namespace\"], resource.attributes[\"service.namespace\"]) where resource.attributes[\"service.namespace\"] != nil",
+      "set(attributes[\"k8s_namespace_name\"], resource.attributes[\"k8s.namespace.name\"]) where resource.attributes[\"k8s.namespace.name\"] != nil",
+      "set(attributes[\"k8s_pod_name\"], resource.attributes[\"k8s.pod.name\"]) where resource.attributes[\"k8s.pod.name\"] != nil",
+    ]
+  }
+  output {
+    metrics = [otelcol.exporter.prometheus.metrics.input]
+  }
+}
+
+otelcol.exporter.prometheus "metrics" {
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+otelcol.processor.batch "traces" {
+  timeout = "2s"
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls {
+      insecure = true
+    }
+  }
+}
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = "http://mimir:8080/api/v1/push"
+  }
+}
+
+// The off-cluster stack's own health, scraped into Mimir.
+prometheus.scrape "backends" {
+  targets = [
+    {"__address__" = "mimir:8080", "instance" = "mimir"},
+    {"__address__" = "loki:3100", "instance" = "loki"},
+    {"__address__" = "tempo:3200", "instance" = "tempo"},
+    {"__address__" = "grafana:3000", "instance" = "grafana"},
+    {"__address__" = "pyroscope:4040", "instance" = "pyroscope"},
+  ]
+  scrape_interval = "15s"
+  job_name = "monitoring-backends"
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// External host exporters: the load generator and the monitoring node are not
+# Kubernetes nodes, so their node_exporter is scraped here. The six cluster
+# nodes are covered by the in-cluster Alloy node collector.
+prometheus.scrape "external_hosts" {
+  targets = [
+    {"__address__" = "{{ cloudlab_private_ips.loadgen }}:9100", "instance" = "loadgen", "node" = "loadgen"},
+    {"__address__" = "{{ cloudlab_private_ips.monitoring }}:9100", "instance" = "mon1", "node" = "mon1"},
+  ]
+  scrape_interval = "5s"
+  scrape_timeout = "4s"
+  job_name = "lab-node"
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// The application VIP, probed from the monitoring host: the cheapest possible
+# end-to-end check that the gateway answers.
+prometheus.exporter.blackbox "gateway" {
+  config = "{modules: {http_2xx: {prober: http, timeout: 4s}}}"
+  target {
+    name = "benchmark-gateway"
+    address = "http://{{ gateway_private_ip }}/"
+    module = "http_2xx"
+  }
+}
+
+prometheus.scrape "blackbox" {
+  targets = prometheus.exporter.blackbox.gateway.targets
+  scrape_interval = "15s"
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.exporter.self "gateway" {}
+prometheus.scrape "self" {
+  targets = prometheus.exporter.self.gateway.targets
+  job_name = "alloy-gateway"
+  scrape_interval = "15s"
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}

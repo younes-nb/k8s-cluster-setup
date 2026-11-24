@@ -8,5 +8,12 @@ cluster-topology.yml
 runner-init/group_vars/cloudlab.local.yml
 kubespray-overlay/inventory/lab/artifacts/admin.conf
 .ansible/
-/admin.conf
+admin.conf
 AGENTS.md
+.vault.pass
+*.vault.pass
+*.creds
+credentials/
+lab-setup/inventory/group_vars/all/vault.yaml
+lab-setup/.venv/
+lab-setup/collections/ansible_collections/

@@ -1,4 +1,14 @@
 ---
+# Add-on order matters:
+#   cert-manager -> ACME solver -> monitoring (KSM + operator) -> Grafana
+#   datasources -> MetalLB -> Envoy Gateway -> the application gateway
+#   -> tracing sampler -> control-plane isolation -> kubelet reservations
+#   -> Alloy -> Beyla -> TrainTicket -> ResourceQuota
+#
+# In-cluster Mimir/Loki/Tempo/Grafana are RETIRED: they run on the `monitoring`
+# host (playbook/monitoring.yaml, roles/monitoring). Alloy stays in the cluster
+# because it must reach pod IPs.
+
 - import_tasks: cert_manager.yaml
   tags: [cert-manager]
 
@@ -11,60 +21,22 @@
 - import_tasks: grafana_datasources.yaml
   tags: [monitoring]
 
-- import_tasks: istio.yaml
-  tags: [istio]
+# MetalLB owns the private application VIP, then Envoy Gateway consumes it.
+# Both must exist before the Gateway is applied.
+- import_tasks: gateway.yaml
+  tags: [gateway, metallb, envoy]
 
-# Classic Istio ingress gateway (istio/gateway chart) in istio-system. Must run
-# after istio: it consumes the chart repo istio.yaml adds, and its pods are
-# selected by the Istio Gateway in templates/gateway.yaml.j2.
-- import_tasks: ingress_gateway.yaml
-  tags: [gateway]
+# Tracing: Istio is gone. Tempo runs on the monitoring host and receives OTLP
+# from the Envoy Gateway / Beyla directly, so there is no in-cluster tracing
+# task any more (the old one applied an Istio Telemetry sampler).
 
-# Tracing (Istio Telemetry sampler only). The Tempo SERVER is RETIRED in-cluster
-# (2026-11-19): it wrote to a `local-path` PVC, i.e. to whatever worker the
-# scheduler picked, and 43 GB of trace blocks pushed worker1 to the kubelet
-# eviction threshold mid-run. Tempo now runs on the monitoring host like
-# Mimir/Loki/Grafana, with OTLP 4317 published and istiod/Alloy pointing at
-# <monitoring_host>:4317.
-#
-# The old task that also applied the Tempo ConfigMap/Deployment/PVC/Service is
-# retired. If it is ever needed again, note that its
-# `backend_worker.compaction.block_retention` setting does NOT enforce retention
-# without a backend-scheduler ("no jobs found"), so a single-binary Tempo will
-# grow its node-local disk without bound.
-- import_tasks: tempo.yaml
-  tags: [tempo]
-
-# Control-plane isolation: give monitoring a high priority so it is evicted last,
-# and (optionally) taint the masters. The taint is OFF by default: with the
-# masters untainted the scheduler can use them for the benchmark, which the
-# cluster needs at this size. See control_plane_isolation.yaml.
+# Control-plane isolation and kubelet reservations. The masters are NOT tainted
+# by default: at this cluster size the namespace needs the whole cluster.
 - import_tasks: control_plane_isolation.yaml
   tags: [control-plane]
 
-# Kubelet reservations. These are what actually protect the system and the
-# control plane when the masters are schedulable: allocatable = capacity minus
-# these. Declarative so a fresh cluster is not born with zero reservations
-# (which is what starved the apiserver on 2026-11-17).
 - import_tasks: kubelet_reservations.yaml
   tags: [kubelet-reservations]
-
-# ---- In-cluster monitoring is RETIRED (2026-11-18) ----------------------
-# Mimir / Loki / Tempo / Grafana now run OUTSIDE the cluster, on the
-# `monitoring` host (playbook/monitoring.yaml, roles/monitoring). While they
-# were in-cluster, Mimir was OOMKilled repeatedly at its 4 Gi limit while
-# sharing the masters with the benchmark's pods, and the kubelet reservations
-# had cut the masters to 5 cores / 8.2 Gi allocatable.
-#
-# Alloy STAYS (it is the scraper and must reach pod IPs, which are not routable
-# from outside); it now remote-writes to <monitoring_host>:18080 and pushes logs
-# to <monitoring_host>:3100 over the private network. See
-# inventory/group_vars/all/postcluster.yaml for the addresses.
-#
-# These imports are kept, commented out, so the old manifests stay reviewable:
-#   - import_tasks: monitoring_disk.yaml  tags: [monitoring-disk]
-#   - import_tasks: loki.yaml             tags: [loki]
-#   - import_tasks: mimir.yaml            tags: [mimir]
 
 - import_tasks: alloy.yaml
   tags: [alloy]

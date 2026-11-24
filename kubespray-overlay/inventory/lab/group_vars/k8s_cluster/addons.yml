@@ -64,8 +64,10 @@ local_volume_provisioner_enabled: false
 # csi snapshot namespace
 # snapshot_controller_namespace: kube-system
 
-# Gateway API CRDs
-gateway_api_enabled: false
+# Gateway API CRDs. Envoy Gateway ships its own copy of the API, but enabling
+# the Kubespray flag installs the standard channel first so a fresh cluster has
+# the API before the gateway chart (lab-setup gateway.yaml) is applied.
+gateway_api_enabled: true
 
 # Nginx ingress controller deployment
 ingress_nginx_enabled: true
@@ -110,10 +112,11 @@ ingress_alb_enabled: false
 
 # Cert manager deployment.
 # NOTE: keep DISABLED — postcluster (lab-setup cluster_addons) installs
-# cert-manager v1.16.3 via Helm instead. Kubespray's manifest-based install
-# here leaves resources without Helm ownership metadata, which makes the
-# later Helm install fail with "invalid ownership metadata".
+# cert-manager via Helm instead. Kubespray's manifest-based install here leaves
+# resources without Helm ownership metadata, which makes the later Helm install
+# fail with "invalid ownership metadata".
 cert_manager_enabled: false
+cert_manager_version: ""
 cert_manager_namespace: "cert-manager"
 # cert_manager_tolerations:
 #   - key: node-role.kubernetes.io/control-plane

@@ -1,0 +1,80 @@
+---
+# MetalLB (private L2 application VIP) + Envoy Gateway (Gateway API data plane).
+#
+# Replaces the classic istio-ingressgateway + the retired in-namespace Gateway
+# API proxy. There are NO NodePorts on the application path: MetalLB advertises
+# ``gateway_private_ip`` on the lab L2 segment and Envoy serves port 80 there.
+
+- name: Install pinned MetalLB manifests (application VIP only)
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} apply -f
+    https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
+  register: _metal
+  changed_when: "'created' in _metal.stdout or 'configured' in _metal.stdout"
+
+- name: Wait for the MetalLB controller
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ metallb_namespace }}
+    rollout status deployment/controller --timeout=300s
+  changed_when: false
+
+- name: Wait for the MetalLB speakers
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ metallb_namespace }}
+    rollout status daemonset/speaker --timeout=300s
+  changed_when: false
+
+- name: Install Envoy Gateway and its Gateway API CRDs
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path }}"
+    name: eg
+    chart_ref: oci://docker.io/envoyproxy/gateway-helm
+    chart_version: "{{ envoy_gateway_version }}"
+    release_namespace: "{{ gateway_namespace }}"
+    create_namespace: true
+    wait: true
+
+- name: Apply the application gateway, VIP pool and route
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    template: gateway.yaml.j2
+  register: _gw_apply
+
+- name: Wait for the Gateway to be programmed
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} wait
+    --for=condition=Programmed gateway/train-ticket --timeout=300s
+  changed_when: false
+
+- name: Check HTTPRoute acceptance and resolved references
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} get httproute train-ticket -o json
+  register: _route
+  until: >-
+    (_route.stdout | from_json).status.parents | default([]) | length > 0 and
+    'True' in ((_route.stdout | from_json).status.parents[0].conditions
+      | selectattr('type','equalto','Accepted') | map(attribute='status') | list) and
+    'True' in ((_route.stdout | from_json).status.parents[0].conditions
+      | selectattr('type','equalto','ResolvedRefs') | map(attribute='status') | list)
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Check the application VIP answers from the load generator
+  ansible.builtin.uri:
+    url: "http://{{ gateway_private_ip }}/"
+    status_code: 200
+  delegate_to: loadgen
+  register: _gw_http
+  until: _gw_http.status | default(0) == 200
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Report the application endpoint
+  ansible.builtin.debug:
+    msg:
+      - "application: http://{{ gateway_private_ip }}/ (Envoy Gateway, no NodePort)"
+      - "GatewayClass: {{ gateway_class | default('lab-envoy') }}"
+      - "gateway replicas: {{ gateway_replicas }}"

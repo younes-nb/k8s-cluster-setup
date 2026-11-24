@@ -47,7 +47,9 @@ kube_apiserver_port: 6443
 
 kube_proxy_mode: iptables
 
-kube_proxy_strict_arp: false
+# MetalLB (installed by lab-setup gateway.yaml) needs strict ARP on the node
+# that owns the application VIP, otherwise the VIP is not announced.
+kube_proxy_strict_arp: true
 
 kube_proxy_nodeport_addresses_cidr: 10.10.1.0/24
 

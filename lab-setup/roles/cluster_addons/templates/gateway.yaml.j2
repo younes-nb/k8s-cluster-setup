@@ -1,78 +1,107 @@
----
-# Classic Istio ingress for the cluster: an Istio `Gateway` selecting the
-# istio-ingressgateway pods (installed by tasks/ingress_gateway.yaml) plus the
-# VirtualServices that bind backends to it.
-#
-# This replaces the Kubernetes Gateway API resources that used to live here. The
-# ingress is shared infrastructure (TrainTicket + the public Grafana host), so it
-# belongs in {{ istio_ns }}, not in the application namespace (2026-11-21).
-apiVersion: networking.istio.io/v1
-kind: Gateway
+{#
+  Gateway API + Envoy Gateway + MetalLB.
+  Replaces the classic istio-ingressgateway and the retired in-namespace
+  Gateway API proxy. No NodePorts: MetalLB advertises gateway_private_ip.
+#}
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
 metadata:
-  name: train-ticket-gateway
-  namespace: {{ istio_ns }}
+  name: benchmark
+  namespace: {{ metallb_namespace }}
 spec:
-  selector:
-    istio: ingressgateway
-  servers:
-  - port:
-      number: 80
-      name: http
-      protocol: HTTP
-    hosts:
-    - "*"
-{% if (tt_host is defined and tt_host) or (grafana_host is defined and grafana_host) %}
-  # HTTPS is only useful when a certificate actually exists. The ACME
-  # Certificate for the public host has been pending since 2026-11-18 (the
-    # challenge host is not reachable from Let's Encrypt on this private LAN),
-  # so this listener is skipped unless a Secret with that name is present.
-  - port:
-      number: 443
-      name: https
-      protocol: HTTPS
-    hosts:
-    - "*"
-    tls:
-      mode: SIMPLE
-      credentialName: "{{ tt_tls_secret }}"
-{% endif %}
+  addresses: ["{{ gateway_private_ip }}/32"]
+  autoAssign: false
 ---
-# Catch-all: everything that is not matched by a more specific VirtualService
-# goes to the TrainTicket UI.
-apiVersion: networking.istio.io/v1
-kind: VirtualService
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
 metadata:
-  name: train-ticket-route
+  name: benchmark
+  namespace: {{ metallb_namespace }}
+spec:
+  ipAddressPools: [benchmark]
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: benchmark
   namespace: {{ tt_ns }}
 spec:
-  hosts:
-  - "*"
-  gateways:
-  - {{ istio_ns }}/train-ticket-gateway
-  http:
-  - route:
-    - destination:
-        host: ts-ui-dashboard.{{ tt_ns }}.svc.cluster.local
-        port:
-          number: 8080
-{% if grafana_host is defined and grafana_host %}
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: {{ gateway_replicas }}
+        container:
+          resources:
+            requests: {cpu: "500m", memory: "256Mi"}
+            limits: {memory: "1Gi"}
+      envoyService:
+        type: LoadBalancer
+        allocateLoadBalancerNodePorts: false
+        externalTrafficPolicy: Cluster
+        annotations:
+          metallb.io/address-pool: benchmark
 ---
-# Public Grafana host. Kept as its own VirtualService so the catch-all above
-# does not swallow it (Istio matches the most specific host).
-apiVersion: networking.istio.io/v1
-kind: VirtualService
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
 metadata:
-  name: grafana-public
+  name: {{ gateway_class | default('lab-envoy') }}
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: train-ticket
+  namespace: {{ tt_ns }}
+spec:
+  gatewayClassName: {{ gateway_class | default('lab-envoy') }}
+  addresses:
+    - type: IPAddress
+      value: "{{ gateway_private_ip }}"
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: benchmark
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: train-ticket
+  namespace: {{ tt_ns }}
+spec:
+  parentRefs:
+    - name: train-ticket
+      sectionName: http
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      backendRefs:
+        - name: ts-ui-dashboard
+          port: 8080
+---
+# Envoy's own metrics, scraped by Alloy.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-gateway-proxy
   namespace: {{ monitoring_ns }}
 spec:
-  hosts:
-  - "{{ grafana_host }}"
-  gateways:
-  - {{ istio_ns }}/train-ticket-gateway
-  http:
-  - route:
-    - destination:
-        host: prometheus-stack-grafana.{{ monitoring_ns }}.svc.cluster.local
-        port:
-          number: 3000
-{% endif %}
+  namespaceSelector: {any: true}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: envoy
+      app.kubernetes.io/component: proxy
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+      interval: 5s
+      scrapeTimeout: 4s

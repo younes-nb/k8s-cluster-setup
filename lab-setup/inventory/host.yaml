@@ -1,35 +1,21 @@
 all:
   children:
-    # Kubernetes cluster nodes (kubespray inventory is separate, under
-    # cluster-repo/kubespray). `loadgen` is the load generator.
     nodes:
-      hosts:
-        loadgen: {}
-        master1: {}
-        master2: {}
-        master3: {}
-        worker1: {}
-        worker2: {}
-        worker3: {}
-
-    # Monitoring is a SEPARATE logical host from the load generator, because the
-    # monitoring stack (Mimir / Loki / Tempo / Grafana) no longer runs inside the
-    # cluster: it was moved off the masters so the TrainTicket benchmark can use
-    # that memory. Keeping it a distinct group means it can later be moved again
-    # by changing one variable.
-    #
-    # On the clemson cluster loadgen=10.10.1.1 (clnode075) and monitoring is its
-    # own node, mon1=10.10.1.2 (clnode060). `monitoring_host` (group_vars) is the
-    # PRIVATE address the in-cluster Alloy scraper pushes to -- it must stay a
-    # 10.10.1.x address because Alloy runs inside the new cluster.
-    #
-    # ansible_host deliberately uses the PUBLIC FQDN: the private 10.10.1.0/24 is
-    # used by BOTH the old and the new cluster, so a bare 10.10.1.2 resolves to
-    # whichever network the controller is on (2026-11-18: running this playbook
-    # from the old loadgen deployed the stack onto the old master1).
+      children:
+        control_plane:
+          hosts:
+            master1: {}
+            master2: {}
+            master3: {}
+        workers:
+          hosts:
+            worker1: {}
+            worker2: {}
+            worker3: {}
+        load_generators:
+          hosts:
+            loadgen: {}
     monitoring:
       hosts:
         mon1:
-          ansible_host: clnode060.clemson.cloudlab.us
-      vars:
-        monitoring_host: 10.10.1.2
+          ansible_host: "{{ cloudlab_private_ips.monitoring }}"

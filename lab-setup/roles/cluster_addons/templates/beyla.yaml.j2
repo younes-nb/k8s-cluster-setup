@@ -97,8 +97,11 @@ spec:
           # The real selection now lives in beyla-config.yml (mounted below).
           - name: BEYLA_CONFIG_PATH
             value: "/config/beyla-config.yml"
+          # Tempo/OTLP live on the monitoring host, not in the cluster. Beyla
+          # pushes over the private network to the off-cluster Alloy gateway,
+          # which owns OTLP 4317 and forwards traces to Tempo.
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
-            value: "http://alloy.{{ monitoring_ns }}.svc.cluster.local:4317"
+            value: "http://{{ monitoring_host }}:4317"
         ports:
         - {containerPort: 8080, name: metrics}
         volumeMounts:

@@ -8,16 +8,18 @@
     update_cache: yes
   become: true
 
-- name: Get latest k6 version from GitHub API
-  ansible.builtin.uri:
-    url: "https://api.github.com/repos/grafana/k6/releases/latest"
-    return_content: yes
-  register: k6_latest
-  changed_when: false
+# k6_version is PINNED (defaults/main.yml). A floating "latest" makes the
+# load generator version depend on when the role last ran, which breaks
+# comparability between experiment arms. Pass -e k6_version=... to move it.
 
-- name: Set k6 version fact
-  ansible.builtin.set_fact:
-    k6_version: "{{ k6_latest.json.tag_name | regex_replace('^v', '') }}"
+- name: Verify the pinned k6 version and its SHA256
+  ansible.builtin.assert:
+    that:
+      - k6_version | length > 0
+      - k6_sha256 | default('') | length > 0
+    fail_msg: >-
+      Supply a verified official k6 SHA256 as k6_sha256 (see README). A pinned
+      version without a checksum is not reproducible.
 
 # The load testing assets live in the sibling research repo
 # (lab-setup/playbook -> repo root -> .. -> sibling).
@@ -42,6 +44,7 @@
     url: "https://github.com/grafana/k6/releases/download/v{{ k6_version }}/k6-v{{ k6_version }}-linux-amd64.tar.gz"
     dest: "/tmp/k6-v{{ k6_version }}-linux-amd64.tar.gz"
     mode: "0644"
+    checksum: "sha256:{{ k6_sha256 }}"
 
 - name: Create temp extract directory
   ansible.builtin.file:
@@ -117,3 +120,28 @@
   loop:
     - /tmp/k6-v{{ k6_version }}-linux-amd64.tar.gz
     - /tmp/k6-extract
+# ---- Off-cluster host metrics for the load generator -----------------------
+# The loadgen is not a Kubernetes node, so its own node_exporter is what puts
+# loadgen CPU/network/disk into Mimir (the Alloy node DaemonSet only covers the
+# six cluster nodes).
+- name: Install the host exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+    update_cache: true
+  when: loadgen_host_metrics | bool
+
+- name: Bind the host exporter to the private interface
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: '^ARGS='
+    line: 'ARGS="--web.listen-address={{ cloudlab_private_ips.loadgen }}:9100"'
+  register: _exporter_cfg
+  when: loadgen_host_metrics | bool
+
+- name: Enable the host exporter
+  ansible.builtin.service:
+    name: prometheus-node-exporter
+    enabled: true
+    state: "{{ 'restarted' if _exporter_cfg is changed else 'started' }}"
+  when: loadgen_host_metrics | bool

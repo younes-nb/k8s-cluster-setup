@@ -1,40 +1,47 @@
 ---
+# Render cluster-topology.yml from .env, exactly as tools/render-topology.yml.
 - hosts: localhost
   connection: local
   gather_facts: false
   vars:
-    ansible_python_interpreter: /usr/bin/python3
+    ansible_python_interpreter: "{{ ansible_playbook_python | default('/usr/bin/python3') }}"
 
   tasks:
-    - name: Parse ../.env into JSON using python3 (heredoc)
-      ansible.builtin.shell: |
-        python3 - <<'PY'
-        import json
+    - name: Parse .env into JSON
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python | default('/usr/bin/python3') }}"
+          - "-c"
+          - |
+            import json, ipaddress, sys
 
-        p = "../.env"
-        d = {}
+            p = "{{ playbook_dir }}/../.env"
+            d = {}
+            with open(p, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if line.startswith("export "):
+                        line = line[7:].strip()
+                    if "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip()
+                    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+                        v = v[1:-1]
+                    d[k] = v
 
-        with open(p, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.startswith("export "):
-                    line = line[7:].strip()
-                if "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                k = k.strip()
-                v = v.strip()
-                # strip surrounding quotes
-                if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
-                    v = v[1:-1]
-                d[k] = v
-
-        print(json.dumps(d))
-        PY
-      args:
-        executable: /bin/bash
+            required = ['CLOUDLAB_DOMAIN','LOADGEN','MONITORING','MASTER1','MASTER2',
+                        'MASTER3','WORKER1','WORKER2','WORKER3','GATEWAY_PRIVATE_IP']
+            missing = [k for k in required if not d.get(k)]
+            if missing:
+                raise SystemExit('Missing .env values: ' + ', '.join(missing))
+            vip = ipaddress.ip_address(d['GATEWAY_PRIVATE_IP'])
+            if vip not in ipaddress.ip_network('10.10.1.0/24') or vip in (
+                    ipaddress.ip_address('10.10.1.0'), ipaddress.ip_address('10.10.1.255')):
+                raise SystemExit('Gateway VIP must be an unused host address on 10.10.1.0/24')
+            print(json.dumps(d))
       register: _env_json
       changed_when: false
 
@@ -42,7 +49,7 @@
       ansible.builtin.set_fact:
         env_vars: "{{ _env_json.stdout | from_json }}"
 
-    - name: Render cluster-topology.yml from template
+    - name: Render cluster-topology.yml
       ansible.builtin.template:
         src: ../cluster-topology.yml.j2
         dest: ../cluster-topology.yml

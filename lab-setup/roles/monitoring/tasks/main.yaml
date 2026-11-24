@@ -76,41 +76,38 @@
     - "{{ monitoring_data_dir }}/loki"
     - "{{ monitoring_data_dir }}/tempo"
     - "{{ monitoring_data_dir }}/grafana"
+    - "{{ monitoring_data_dir }}/alloy"
+    - "{{ monitoring_data_dir }}/pyroscope"
+    - "{{ monitoring_base_dir }}/conf/rules/anonymous"
+    - "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards"
+    - "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards/json"
   become: true
 
 # Each image runs as a non-root UID, so the bind-mounted data dirs must be owned
 # by it or the container cannot write (mimir=0, loki=10001, tempo=10001,
 # grafana=472). Tempo's image entrypoint IS /tempo (the binary), so its data
 # must NOT be mounted at /tempo -- it lives at /var/tempo.
-- name: Give each data dir to the UID its image runs as
+#
+# EXISTING DATA IS PRESERVED: ownership is set without ``recurse``, so files
+# already inside are never walked or re-owned. On a 120 GB live monitoring disk
+# a recursive chown is both slow and risky.
+- name: Give each data dir to the UID its image runs as (non-recursive)
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
     owner: "{{ item.owner }}"
     group: "{{ item.group }}"
-    recurse: true
+    mode: "0750"
+    recurse: false
   loop:
     - {path: "{{ monitoring_data_dir }}/mimir", owner: "0", group: "0"}
     - {path: "{{ monitoring_data_dir }}/loki", owner: "10001", group: "10001"}
     - {path: "{{ monitoring_data_dir }}/tempo", owner: "10001", group: "10001"}
     - {path: "{{ monitoring_data_dir }}/grafana", owner: "472", group: "472"}
+    - {path: "{{ monitoring_data_dir }}/alloy", owner: "0", group: "0"}
+    - {path: "{{ monitoring_data_dir }}/pyroscope", owner: "0", group: "0"}
   become: true
   failed_when: false
-
-# On NFS with root_squash the chown above silently fails (root maps to nobody),
-# and the containers then cannot write at all. Fall back to world-writable
-# directories, which is acceptable on this private cluster.
-- name: Ensure the data dirs are writable by the container UIDs
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: "0777"
-  loop:
-    - "{{ monitoring_data_dir }}/mimir"
-    - "{{ monitoring_data_dir }}/loki"
-    - "{{ monitoring_data_dir }}/tempo"
-    - "{{ monitoring_data_dir }}/grafana"
-  become: true
 
 - name: Render Mimir config
   ansible.builtin.template:
@@ -140,6 +137,30 @@
   ansible.builtin.template:
     src: grafana-datasources.yaml.j2
     dest: "{{ monitoring_base_dir }}/conf/grafana/provisioning/datasources/datasources.yaml"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Render the off-cluster Alloy gateway (OTLP + blackbox + host scrapes)
+  ansible.builtin.template:
+    src: alloy-gateway.alloy.j2
+    dest: "{{ monitoring_base_dir }}/conf/alloy-gateway.alloy"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Provision the Grafana dashboard provider
+  ansible.builtin.copy:
+    src: dashboards-provider.yaml
+    dest: "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards/lab.yaml"
+    mode: "0644"
+  become: true
+  notify: restart monitoring stack
+
+- name: Provision the Research Lab dashboards
+  ansible.builtin.copy:
+    src: dashboards/
+    dest: "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards/json/"
     mode: "0644"
   become: true
   notify: restart monitoring stack

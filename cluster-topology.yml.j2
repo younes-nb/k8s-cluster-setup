@@ -21,3 +21,4 @@ cloudlab_private_ips:
 
 kube_control_plane_hosts: [master1, master2, master3]
 kube_worker_hosts: [worker1, worker2, worker3]
+gateway_private_ip: "{{ env_vars.GATEWAY_PRIVATE_IP | default('') }}"

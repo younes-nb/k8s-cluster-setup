@@ -1,0 +1,128 @@
+---
+# Delete the legacy mesh and retired ingress stack.
+#
+# DISRUPTIVE. This is a one-time migration and refuses to run without
+# ``allow_live_migration=true``. It removes:
+#   * the benchmark's native HPAs (a replica writer must be unique)
+#   * the Istio Gateway/VirtualService/DestinationRule objects
+#   * the istiod / istio-ingressgateway / istio-base Helm releases
+#   * the istio-system and ingress-nginx namespaces
+#   * the old CPU/memory ResourceQuota (upstream omits requests)
+#
+# It does NOT delete PVCs, databases, monitoring data or the benchmark's own
+# Deployments. Read docs/MIGRATION.md before running it.
+
+- name: Migrate the legacy cluster in an approved maintenance window
+  hosts: master1
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Explicitly authorize the disruptive migration
+      ansible.builtin.assert:
+        that: allow_live_migration | bool
+        fail_msg: >-
+          Stop experiments and every external autoscaler, back up manifests and
+          data, then pass -e allow_live_migration=true.
+
+    - name: Remove native baseline HPAs (benchmark namespace only)
+      ansible.builtin.command: >-
+        kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+        delete hpa --all --ignore-not-found
+      register: _hpa
+      changed_when: "'deleted' in _hpa.stdout"
+
+    - name: Disable mesh injection in the benchmark namespace
+      ansible.builtin.command: >-
+        kubectl --kubeconfig={{ kubeconfig_path }} label namespace {{ tt_ns }}
+        istio-injection=disabled --overwrite
+      changed_when: true
+
+    - name: Inspect the legacy mesh namespace
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Namespace
+        name: istio-system
+      register: _mesh
+
+    - name: Remove the known legacy mesh custom resources
+      ansible.builtin.command: >-
+        kubectl --kubeconfig={{ kubeconfig_path }} -n {{ item.ns }}
+        delete {{ item.kind }} {{ item.name }} --ignore-not-found
+      loop:
+        - {ns: istio-system, kind: gateways.networking.istio.io, name: train-ticket-gateway}
+        - {ns: train-ticket, kind: virtualservices.networking.istio.io, name: train-ticket-route}
+        - {ns: train-ticket, kind: destinationrules.networking.istio.io, name: mongo-idle-timeout}
+        - {ns: monitoring, kind: virtualservices.networking.istio.io, name: grafana-public}
+      when: _mesh.resources | length > 0
+      register: _delete_mesh
+      changed_when: "'deleted' in _delete_mesh.stdout"
+      failed_when: false
+
+    - name: Uninstall the legacy mesh releases (data PVCs are left alone)
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig_path }}"
+        name: "{{ item }}"
+        release_namespace: istio-system
+        state: absent
+        wait: true
+      loop: [istio-ingressgateway, istiod, istio-base]
+      when: _mesh.resources | length > 0
+      failed_when: false
+
+    - name: Delete the istio-system namespace (only after operator review)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Namespace
+        name: istio-system
+        state: absent
+        wait: true
+      when: _mesh.resources | length > 0
+
+    - name: Inspect the retired ingress namespace
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Namespace
+        name: ingress-nginx
+      register: _ingress
+
+    - name: Delete the retired ingress namespace after operator review
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Namespace
+        name: ingress-nginx
+        state: absent
+        wait: true
+      when: _ingress.resources | length > 0
+
+    - name: Remove the old CPU/memory quota keys (upstream may omit requests)
+      ansible.builtin.command: >-
+        kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+        delete resourcequota train-ticket-quota --ignore-not-found
+      register: _quota
+      changed_when: "'deleted' in _quota.stdout"
+      failed_when: false
+
+    - name: Remove the retired in-namespace proxy
+      ansible.builtin.command: >-
+        kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+        delete deploy train-ticket-gateway-istio --ignore-not-found
+      register: _proxy
+      changed_when: "'deleted' in _proxy.stdout"
+      failed_when: false
+
+    - name: Restart the benchmark pods without injected sidecars (PVCs retained)
+      ansible.builtin.command: >-
+        kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+        rollout restart deployment
+      changed_when: true
+
+    - name: Report the next step
+      ansible.builtin.debug:
+        msg:
+          - "migration applied; now run playbook/postcluster.yaml -b -e allow_live_migration=true"
+          - "then verify every pod has exactly one container (no istio-proxy)"
+          - "and that http://{{ gateway_private_ip }}/ answers 200"

@@ -1,5 +1,7 @@
 ---
-- name: Resolve CloudLab hostnames to IPv4 and generate vars files
+# Resolve the CloudLab public hostnames to IPv4 and write the generated vars
+# files consumed by every role (`ip:` / `access_ip:`).
+- name: Resolve CloudLab hostnames and generate vars files
   hosts: localhost
   connection: local
   gather_facts: false
@@ -7,41 +9,38 @@
     - ../cluster-topology.yml
 
   tasks:
-    - name: Resolve IPv4 for each CloudLab host (via getent)
-      ansible.builtin.command: >
+    - name: Resolve IPv4 for each CloudLab host
+      ansible.builtin.command: >-
         bash -lc "getent ahostsv4 {{ item.value }} | awk 'NR==1{print $1}'"
       loop: "{{ cloudlab_hosts | dict2items }}"
       register: resolved
       changed_when: false
 
-    - name: Build cloudlab_ips dict (alias -> ip)
+    - name: Build the cloudlab_ips map (alias -> ip)
       ansible.builtin.set_fact:
         cloudlab_ips: >-
-          {{
-            cloudlab_ips | default({}) |
-            combine({ item.item.key: item.stdout })
-          }}
+          {{ (cloudlab_ips | default({}))
+             | combine({item.item.key: item.stdout}) }}
       loop: "{{ resolved.results }}"
 
     - name: Fail if any host did not resolve
       ansible.builtin.assert:
         that:
-          - cloudlab_ips[item.key] is match('^([0-9]{1,3}\.){3}[0-9]{1,3}$')
+          - cloudlab_ips[item.key] is match('^([0-9]{1,3}\\.){3}[0-9]{1,3}$')
         fail_msg: "Failed to resolve IPv4 for {{ item.key }} ({{ item.value }})"
       loop: "{{ cloudlab_hosts | dict2items }}"
 
-    - name: Build derived lists
+    - name: Build the derived lists
       ansible.builtin.set_fact:
         loadgen_ip: "{{ cloudlab_ips.loadgen }}"
         master_ips: "{{ kube_control_plane_hosts | map('extract', cloudlab_ips) | list }}"
         worker_ips: "{{ kube_worker_hosts | map('extract', cloudlab_ips) | list }}"
-        cluster_trusted_ips: "{{ [cloudlab_ips.loadgen] + (kube_control_plane_hosts | map('extract', cloudlab_ips) | list) + (kube_worker_hosts | map('extract', cloudlab_ips) | list) }}"
+        cluster_trusted_ips: >-
+          {{ [cloudlab_ips.loadgen, cloudlab_ips.monitoring]
+             + (kube_control_plane_hosts | map('extract', cloudlab_ips) | list)
+             + (kube_worker_hosts | map('extract', cloudlab_ips) | list) }}
 
-    - name: Include private IPs from topology (link-1 LAN)
-      ansible.builtin.set_fact:
-        cloudlab_private_ips: "{{ cloudlab_private_ips | default({}) }}"
-
-    - name: Write generated vars into lab-setup and kubespray-overlay
+    - name: Write the generated vars into lab-setup and kubespray-overlay
       ansible.builtin.copy:
         dest: "{{ item }}"
         mode: "0644"
@@ -49,6 +48,7 @@
           # GENERATED FILE - do not edit
           cloudlab_ips: {{ cloudlab_ips }}
           cloudlab_private_ips: {{ cloudlab_private_ips }}
+          gateway_private_ip: "{{ gateway_private_ip }}"
           loadgen_ip: "{{ loadgen_ip }}"
           master_ips: {{ master_ips }}
           worker_ips: {{ worker_ips }}

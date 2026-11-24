@@ -1,5 +1,11 @@
 ---
-- name: Apply ClusterIssuer
+# ACME ClusterIssuer, used only for the public Grafana host.
+#
+# The application path is the Envoy Gateway VIP on a private L2 segment, which
+# Let's Encrypt cannot reach, so the challenge stays pending on this LAN (a
+# known, documented limitation). The issuer is still created so the certificate
+# is correct on a cluster with public ingress.
+- name: Apply the ACME ClusterIssuer
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ kubeconfig_path }}"
@@ -15,12 +21,9 @@
           privateKeySecretRef:
             name: "{{ acme_private_key_secret }}"
           solvers:
-            # The Gateway API HTTPRoute solver was removed: the in-namespace
-            # Gateway CR is gone (the ingress is now the classic
-            # istio-ingressgateway in {{ istio_ns }}). Note that the public
-            # HTTPS host is not attainable on this private LAN either way --
-            # Let's Encrypt cannot reach the challenge host, so the Certificate
-            # stays pending (unchanged since 2026-11-18).
             - http01:
-                ingress:
-                  class: "{{ ingress_class }}"
+                gatewayHTTPRoute:
+                  parentRefs:
+                    - name: "{{ gateway_public_cert_gateway | default('lab-envoy') }}"
+                      namespace: "{{ gateway_namespace }}"
+                      sectionName: http

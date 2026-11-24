@@ -1,9 +1,11 @@
 # Monitoring stack, hosted on the `monitoring` host (NOT in the cluster).
 #
+# Single architecture: Mimir, Loki, Tempo, Grafana and Pyroscope, plus an Alloy
+# gateway that owns OTLP 4317/4318 for the whole lab. The in-cluster Alloy
+# scrapes the pods and remote-writes over the private network.
+#
 # Ports match the old in-cluster Service ports so 127.0.0.1:18080 (Mimir) and
-# 127.0.0.1:3100 (Loki) keep working for every existing script, and the
-# in-cluster Alloy scraper pushes to <monitoring_host>:<port> over the private
-# network. Published on 0.0.0.0 so both reach it.
+# 127.0.0.1:3100 (Loki) keep working for every existing script.
 services:
   mimir:
     image: {{ monitoring_mimir_image }}
@@ -13,11 +15,12 @@ services:
       - "{{ monitoring_ports.mimir }}:8080"
     volumes:
       - ./conf/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      - ./conf/rules:/etc/mimir/rules:ro
       - {{ monitoring_data_dir }}/mimir:/mimir
     restart: unless-stopped
     # 8g was too small: during high-churn runs the ingester holds millions
-    # of active istio series and thrashes (pushes time out, the ring marks
-    # the ingester unhealthy). mon1 has 251 GiB, so give it room.
+    # of active series and thrashes (pushes time out, the ring marks the
+    # ingester unhealthy). mon1 has 251 GiB, so give it room.
     mem_limit: 48g
 
   loki:
@@ -36,13 +39,10 @@ services:
     image: {{ monitoring_tempo_image }}
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     container_name: tempo
+    # Only the query port is published. OTLP ingestion belongs to the Alloy
+    # gateway below, so Tempo keeps 4317/4318 internal to the compose network.
     ports:
       - "{{ monitoring_ports.tempo }}:3200"
-      # OTLP gRPC/HTTP must be reachable from inside the cluster (Alloy pushes
-      # traces here). Without these, Tempo accepts nothing and the traces pile
-      # up in the retired in-cluster Tempo instead (2026-11-19).
-      - "4317:4317"
-      - "4318:4318"
     volumes:
       - ./conf/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - {{ monitoring_data_dir }}/tempo:/var/tempo
@@ -64,3 +64,28 @@ services:
       - ./conf/grafana/provisioning:/etc/grafana/provisioning:ro
     restart: unless-stopped
     mem_limit: 1g
+
+  # OTLP gateway for the whole lab: Beyla, the Envoy Gateway and any other
+  # instrumented workload push here. Traces go to Tempo, metrics to Mimir.
+  alloy-gateway:
+    image: {{ alloy_image }}
+    command: [run, '--server.http.listen-addr=0.0.0.0:12345', '--storage.path=/var/lib/alloy', /etc/alloy/config.alloy]
+    ports:
+      - "{{ monitoring_ports.otlp }}:4317"
+      - "0.0.0.0:4318:4318"
+    volumes:
+      - ./conf/alloy-gateway.alloy:/etc/alloy/config.alloy:ro
+      - {{ monitoring_data_dir }}/alloy:/var/lib/alloy
+    restart: unless-stopped
+    mem_limit: 8g
+
+  pyroscope:
+    image: {{ monitoring_pyroscope_image }}
+    user: "0:0"
+    command: ['-storage.backend=filesystem', '-storage.filesystem.dir=/data/blocks', '-pyroscopedb.data-path=/data/db']
+    ports:
+      - "{{ monitoring_ports.pyroscope }}:4040"
+    volumes:
+      - {{ monitoring_data_dir }}/pyroscope:/data
+    restart: unless-stopped
+    mem_limit: 4g

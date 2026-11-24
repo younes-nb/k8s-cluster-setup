@@ -36,6 +36,8 @@ monitoring_mimir_image: docker.io/grafana/mimir:3.2.1
 monitoring_loki_image: docker.io/grafana/loki:3.7.8
 monitoring_tempo_image: docker.io/grafana/tempo:3.0.3
 monitoring_grafana_image: docker.io/grafana/grafana:13.3.0-distroless
+monitoring_pyroscope_image: docker.io/grafana/pyroscope:1.18.1
+monitoring_alloy_image: docker.io/grafana/alloy:v1.20.0
 
 # Public (cluster-facing) address the Alloy scraper pushes to. The group var of
 # the same name (inventory/host.yaml) wins; the default is the loadgen's private
@@ -46,6 +48,8 @@ monitoring_ports:
   mimir: 18080
   loki: 3100
   tempo: 3200
+  otlp: 4317
+  pyroscope: 4040
   grafana: 3000
 
 # Retention. The monitoring disk (/dev/sdb, 458 G) is dedicated to this, and the

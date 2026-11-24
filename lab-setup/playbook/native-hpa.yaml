@@ -1,0 +1,67 @@
+---
+- name: Install the native CPU HPA baseline only
+  hosts: master1
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read the benchmark Deployments
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ tt_ns }}"
+      register: deployments
+
+    - name: Refuse a CPU HPA when upstream omits the CPU request
+      ansible.builtin.assert:
+        that: >-
+          item.1.resources is defined and
+          item.1.resources.requests is defined and
+          item.1.resources.requests.cpu is defined
+        fail_msg: >-
+          {{ item.0.metadata.name }}/{{ item.1.name }} has no CPU request, so a
+          request-relative HPA target is undefined. Do not invent requests to
+          force the baseline.
+      loop: >-
+        {{ deployments.resources
+           | rejectattr('metadata.name','match','.*-(mongo|mysql|redis)$')
+           | subelements('spec.template.spec.containers') }}
+      loop_control:
+        label: "{{ item.0.metadata.name }}/{{ item.1.name }}"
+
+    - name: Apply CPU HPAs for the stateless services
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        state: present
+        definition:
+          apiVersion: autoscaling/v2
+          kind: HorizontalPodAutoscaler
+          metadata:
+            name: "{{ item.metadata.name }}-hpa"
+            namespace: "{{ tt_ns }}"
+          spec:
+            minReplicas: "{{ tt_min_replicas }}"
+            maxReplicas: "{{ tt_max_replicas }}"
+            scaleTargetRef:
+              apiVersion: apps/v1
+              kind: Deployment
+              name: "{{ item.metadata.name }}"
+            metrics:
+              - type: Resource
+                resource:
+                  name: cpu
+                  target:
+                    type: Utilization
+                    averageUtilization: "{{ tt_cpu_avg_utilization }}"
+      loop: >-
+        {{ deployments.resources
+           | rejectattr('metadata.name','match','.*-(mongo|mysql|redis)$') | list }}
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
+    - name: Report the baseline
+      ansible.builtin.debug:
+        msg: >-
+          native CPU HPA baseline applied (min {{ tt_min_replicas }},
+          max {{ tt_max_replicas }}, target {{ tt_cpu_avg_utilization }}%).
+          Stop every other autoscaler first -- never run two writers.
