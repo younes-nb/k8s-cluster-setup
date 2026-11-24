@@ -4,7 +4,7 @@ kubeconfig_path: /etc/kubernetes/admin.conf
 # proxy are gone. Traffic enters through Envoy Gateway, which fronts TrainTicket,
 # the public Grafana host and the ACME solver. There are NO NodePorts on the
 # application path: MetalLB advertises a private VIP on the lab L2 segment.
-gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.2/standard-install.yaml"
+gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
 envoy_gateway_version: "v1.6.2"
 gateway_replicas: 3
 gateway_namespace: "envoy-gateway-system"
@@ -82,6 +82,7 @@ tt_cpu_avg_utilization: 80
 tt_wait_retries: 180
 tt_wait_delay: 5
 tt_mongo_image: "mongo:4.4"
+tt_mysql_image: "mysql:8.0"
 tt_app_req_cpu: "500m"
 tt_app_req_mem: "512Mi"
 tt_app_lim_cpu: "2"
@@ -122,3 +123,6 @@ tq_requests_memory: "1300Gi"
 tq_pods: "400"
 tq_count_deployments: "100"
 tq_count_replicasets: "400"
+
+# Only explicit, verified overrides of probe paths/ports should be supplied.
+tt_probe_overrides: {}

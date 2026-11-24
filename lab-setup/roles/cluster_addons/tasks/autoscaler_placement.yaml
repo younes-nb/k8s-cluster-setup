@@ -1,0 +1,90 @@
+---
+# Pin the autoscaler controllers to the control-plane nodes.
+#
+# AURORA, AURORA-R and the vendored PBScaler belong with the control plane:
+# they are measuring the workload, not part of it, and running them on a worker
+# puts them in the same cgroup tree they are benchmarking. The benchmark's own
+# Deployments carry ``lab.example.com/worker=true`` and can never land here.
+#
+# The pods tolerate the control-plane taint (NoSchedule) and select the masters
+# explicitly. Where a controller is not deployed this is a no-op.
+
+- name: Ensure the autoscaler namespace exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ autoscaler_namespace | default('train-ticket') }}"
+
+- name: Pin AURORA to a control-plane node
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: aurora, namespace: "{{ autoscaler_namespace | default('train-ticket') }}"}
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              node-role.kubernetes.io/control-plane: ""
+            tolerations:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+                effect: NoSchedule
+  register: _pin_aurora
+  failed_when: false
+
+- name: Pin AURORA-R to a control-plane node
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: aurora-r, namespace: "{{ autoscaler_namespace | default('train-ticket') }}"}
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              node-role.kubernetes.io/control-plane: ""
+            tolerations:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+                effect: NoSchedule
+  register: _pin_aurorar
+  failed_when: false
+
+- name: Pin PBScaler to a control-plane node
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    merge_type: strategic-merge
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: pbscaler, namespace: "{{ autoscaler_namespace | default('train-ticket') }}"}
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              node-role.kubernetes.io/control-plane: ""
+            tolerations:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+                effect: NoSchedule
+  register: _pin_pbs
+  failed_when: false
+
+- name: Report the autoscaler placement
+  ansible.builtin.debug:
+    msg:
+      - "autoscaler controllers are pinned to node-role.kubernetes.io/control-plane"
+      - "the benchmark is pinned to lab.example.com/worker=true, so the two never mix"
+      - "if a controller is not deployed, its pin task is a harmless no-op"

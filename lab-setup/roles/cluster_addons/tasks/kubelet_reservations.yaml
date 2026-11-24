@@ -41,7 +41,7 @@
   become: true
   register: _kubelet_res
   changed_when: "'patched' in (_kubelet_res.stdout | default(''))"
-  failed_when: _kubelet_res.rc != 0
+  failed_when: _kubelet_res is failed
 
 - name: Wait for every node to report Ready again
   kubernetes.core.k8s_info:

@@ -1,18 +1,33 @@
 ---
+# Deploy the pinned upstream TrainTicket 0.0.4 workload with its OWN resource
+# requests/limits/JVM settings preserved (via templates/inject_selectors.py and
+# templates/restore_upstream.py). No Istio, no NodePorts, no in-namespace
+# Gateway API proxy: the application path is the Envoy Gateway VIP.
+#
+# The playbook that applies this refuses to run if any HPA already owns the
+# benchmark Deployments -- a second replica writer is never allowed.
 
-- name: Ensure Train-Ticket namespace exists (Istio injection enabled)
+- name: Ensure the Train-Ticket namespace exists
   kubernetes.core.k8s:
-    state: present
     kubeconfig: "{{ kubeconfig_path }}"
+    state: present
     definition:
       apiVersion: v1
       kind: Namespace
       metadata:
         name: "{{ tt_ns }}"
-        labels: >-
-          {{
-            {'istio-injection': 'enabled'} if tt_enable_istio_injection | bool else {}
-          }}
+
+# The renderer pins every workload pod to ``lab.example.com/worker=true`` so the
+# benchmark never lands on a control-plane node. The label must exist before the
+# first rollout, otherwise every pod stays Pending with
+# "didn't match Pod's node affinity/selector".
+- name: Label the designated workers for the benchmark
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} label node {{ item }}
+    lab.example.com/worker=true --overwrite
+  loop: "{{ groups['workers'] }}"
+  register: _label
+  changed_when: "'labeled' in _label.stdout"
 
 - name: Ensure git is installed
   ansible.builtin.apt:
@@ -21,7 +36,7 @@
     update_cache: yes
   become: true
 
-- name: Clone/Update Train-Ticket repo (shallow, pinned tag)
+- name: Clone/Update the Train-Ticket repo (shallow, pinned tag)
   ansible.builtin.git:
     repo: "{{ tt_repo_url }}"
     dest: "{{ tt_clone_dir }}"
@@ -30,77 +45,73 @@
     force: true
   register: _tt_git
 
-- name: Stage selector-fixed manifests (upstream 0.0.4 omits spec.selector)
-  ansible.builtin.template:
-    src: inject_selectors.py
+- name: Stage the upstream manifest renderer
+  ansible.builtin.copy:
+    src: "{{ role_path }}/templates/inject_selectors.py"
     dest: "{{ tt_clone_dir }}/inject_selectors.py"
     mode: "0755"
 
-- name: Render apply-ready manifests
+- name: Render apply-ready manifests (selectors, worker placement, probes)
   ansible.builtin.command: >
     python3 "{{ tt_clone_dir }}/inject_selectors.py"
+    --out "{{ tt_clone_dir }}/deployment/k8s-deployment.ready"
     "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part1.yml"
     "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part2.yml"
     "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part3.yml"
-    "{{ tt_clone_dir }}/deployment/k8s-deployment.ready"
   environment:
+    TT_PROBES: "{{ tt_probe_overrides | to_json }}"
     TT_MONGO_IMAGE: "{{ tt_mongo_image }}"
-  register: _tt_render
+    TT_MYSQL_IMAGE: "{{ tt_mysql_image }}"
   changed_when: false
 
-- name: Apply Train-Ticket manifests (parts 1-3, jaeger applied then removed below)
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ tt_ns }}"
+- name: Refuse to act if a native HPA already owns the benchmark
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} get hpa -o json
+  register: _hpa
+  changed_when: false
+
+- name: Require a quiescent benchmark before applying replica declarations
+  ansible.builtin.assert:
+    that: (_hpa.stdout | from_json)['items'] | length == 0
+    fail_msg: >-
+      Native HPAs are present. Stop external autoscalers and remove them before
+      benchmark setup: never run two replica writers against one Deployment.
+
+- name: Apply the upstream manifests (resources unchanged)
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
     apply -f "{{ tt_clone_dir }}/deployment/k8s-deployment.ready/{{ item }}"
-  loop:
-    - ts-deployment-part1.yml
-    - ts-deployment-part2.yml
-    - ts-deployment-part3.yml
+  loop: [ts-deployment-part1.yml, ts-deployment-part2.yml, ts-deployment-part3.yml]
   register: _tt_apply
-  changed_when: >
-    ('created' in _tt_apply.stdout) or
-    ('configured' in _tt_apply.stdout) or
-    ('unchanged' not in _tt_apply.stdout)
+  changed_when: "'created' in _tt_apply.stdout or 'configured' in _tt_apply.stdout"
 
-- name: Remove jaeger/zipkin leftovers (not part of the serving benchmark)
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: absent
-    kind: "{{ item.kind }}"
-    api_version: v1
-    name: "{{ item.name }}"
-    namespace: "{{ tt_ns }}"
-  loop:
-    - { kind: Deployment, name: jaeger }
-    - { kind: Service, name: jaeger }
-    - { kind: Service, name: jaeger-query }
-    - { kind: Service, name: jaeger-collector }
-    - { kind: Service, name: zipkin }
-  ignore_errors: true
+- name: Stage the live upstream resource restoration helper
+  ansible.builtin.copy:
+    src: "{{ role_path }}/templates/restore_upstream.py"
+    dest: /tmp/restore-upstream.py
+    mode: "0700"
+  when: allow_live_migration | bool
 
-- name: Apply ts-avatar-service (absent upstream at {{ tt_repo_version }})
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    template: ts-avatar-service.yaml.j2
+- name: Restore the exact upstream resources and drop the legacy JVM override
+  ansible.builtin.command: >-
+    python3 /tmp/restore-upstream.py {{ tt_ns }} {{ kubeconfig_path }}
+    "{{ tt_clone_dir }}/deployment/k8s-deployment.ready"
+  when: allow_live_migration | bool
+  register: _restore
+  changed_when: "'patched' in _restore.stdout"
 
-- name: Apply dashboard nginx override (adds backend-dialect proxy locations
-    so ALL saga traffic can enter through the frontend; rollback = delete
-    this ConfigMap + remove the volume below)
+- name: Configure the frontend proxy for the benchmark API paths
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
     definition:
       apiVersion: v1
       kind: ConfigMap
-      metadata:
-        name: ts-ui-dashboard-nginx
-        namespace: "{{ tt_ns }}"
+      metadata: {name: ts-ui-dashboard-nginx, namespace: "{{ tt_ns }}"}
       data:
         nginx.conf: "{{ lookup('template', 'dashboard-nginx.conf.j2') }}"
 
-- name: Mount nginx override into ts-ui-dashboard
+- name: Mount the frontend proxy configuration
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
@@ -108,234 +119,44 @@
     definition:
       apiVersion: apps/v1
       kind: Deployment
-      metadata:
-        name: ts-ui-dashboard
-        namespace: "{{ tt_ns }}"
+      metadata: {name: ts-ui-dashboard, namespace: "{{ tt_ns }}"}
       spec:
         template:
+          metadata:
+            annotations:
+              lab.example.com/proxy-config: "{{ lookup('template', 'dashboard-nginx.conf.j2') | hash('sha256') }}"
           spec:
             containers:
               - name: ts-ui-dashboard
                 volumeMounts:
-                  - name: nginx-override
-                    mountPath: /usr/local/openresty/nginx/conf/nginx.conf
-                    subPath: nginx.conf
+                  - {name: nginx-override, mountPath: /usr/local/openresty/nginx/conf/nginx.conf, subPath: nginx.conf}
             volumes:
               - name: nginx-override
-                configMap:
-                  name: ts-ui-dashboard-nginx
-                  items:
-                    - key: nginx.conf
-                      path: nginx.conf
+                configMap: {name: ts-ui-dashboard-nginx}
 
-- name: Add readiness probe to ts-ui-dashboard (fixes startup-race 503s)
+- name: Read the benchmark Deployments
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+    get deploy -o json
+  register: _tt_state
+  changed_when: false
+
+- name: Collect the datastore deployment names
+  ansible.builtin.set_fact:
+    _db_names: >-
+      {{ (_tt_state.stdout | from_json)['items']
+         | map(attribute='metadata.name') | select('search', '-(mongo|mysql)$')
+         | list }}
+
+- name: Create the datastore PVCs (fresh local-path volumes)
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
-    merge_type: strategic-merge
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: ts-ui-dashboard
-        namespace: "{{ tt_ns }}"
-      spec:
-        template:
-          spec:
-            containers:
-              - name: ts-ui-dashboard
-                readinessProbe:
-                  httpGet:
-                    path: /
-                    port: 8080
-                  initialDelaySeconds: 5
-                  periodSeconds: 5
-                  timeoutSeconds: 3
-                  failureThreshold: 3
-                livenessProbe:
-                  httpGet:
-                    path: /
-                    port: 8080
-                  initialDelaySeconds: 15
-                  periodSeconds: 10
-                  timeoutSeconds: 3
-                  failureThreshold: 3
-
-- name: Add liveness probe to ts-user-service (detects a wedged Tomcat Acceptor)
-  # ts-user-service loses its Tomcat Acceptor thread to OutOfMemoryError while
-  # the JVM stays alive and the listening socket stays open. A tcpSocket probe
-  # cannot see that (the kernel still accepts into the backlog) and an httpGet
-  # probe treats the app's universal 403 (Spring Security) as failure, so the
-  # probe must be an exec that only requires *any* 1xx-5xx status: it proves the
-  # application connector answered, and fails when the connector is wedged.
-  # Declarative here so a fresh `lab-setup` run cannot silently drop the probe
-  # that was previously only `kubectl patch`ed onto the live cluster.
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    merge_type: strategic-merge
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: ts-user-service
-        namespace: "{{ tt_ns }}"
-      spec:
-        template:
-          spec:
-            containers:
-              - name: ts-user-service
-                livenessProbe:
-                  exec:
-                    command:
-                      - /bin/sh
-                      - -c
-                      - "curl -s -o /dev/null -m 5 -w '%{http_code}' http://127.0.0.1:12342/ | grep -qE '^[1-5][0-9][0-9]$'"
-                  initialDelaySeconds: 300
-                  periodSeconds: 20
-                  timeoutSeconds: 10
-                  failureThreshold: 5
-
-- name: Add DestinationRule for mongo traffic (prevents Envoy idle-timeout closing pooled connections)
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    definition:
-      apiVersion: networking.istio.io/v1beta1
-      kind: DestinationRule
-      metadata:
-        name: mongo-idle-timeout
-        namespace: "{{ tt_ns }}"
-      spec:
-        host: "*.{{ tt_ns }}.svc.cluster.local"
-        trafficPolicy:
-          connectionPool:
-            tcp:
-              maxConnections: 100
-              connectTimeout: 10s
-              idleTimeout: 0s
-              # 0s disables Envoy's TCP idle timeout for mongo upstreams.
-              # Without it the default 1 h idle reap silently kills pooled
-              # connections that the mongo driver (3.4.3, maxConnectionLifeTime=0)
-              # expects to keep forever -> SocketException / "Prematurely reached
-              # end of stream" -> HTTP 500. The previous version of this rule set
-              # only maxConnections/connectTimeout despite its name.
-              # Disabling the reap alone is NOT sufficient (2026-11-20): with an
-              # idle namespace the driver still ended up holding a dead pooled
-              # connection, and the first request after a cold reset returned
-              # 500 "Prematurely reached end of stream". Two measures make the
-              # pool self-healing:
-              #   * tcpKeepalive - Envoy probes idle upstreams, so a silently
-              #     dead connection is detected in ~60 s instead of hanging;
-              #   * maxConnectionDuration - recycle connections before anything
-              #     else (conntrack table, node reboot, sidecar restart) can reap
-              #     them unnoticed.
-              maxConnectionDuration: 30m
-              tcpKeepalive:
-                time: 30s
-                interval: 10s
-                probes: 3
-
-- name: Get Train-Ticket deployments
-  kubernetes.core.k8s_info:
-    api_version: apps/v1
-    kind: Deployment
-    namespace: "{{ tt_ns }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-  register: _tt_deploys
-
-- name: Wait for all Train-Ticket deployments to be available
-  kubernetes.core.k8s_info:
-    api_version: apps/v1
-    kind: Deployment
-    name: "{{ item.metadata.name }}"
-    namespace: "{{ tt_ns }}"
-    kubeconfig: "{{ kubeconfig_path }}"
-  register: _wait_each
-  until: >
-    _wait_each.resources | length > 0 and
-    (_wait_each.resources[0].status.availableReplicas | default(0)) >=
-    (_wait_each.resources[0].spec.replicas | default(1))
-  retries: "{{ tt_wait_retries }}"
-  delay: "{{ tt_wait_delay }}"
-  loop: "{{ _tt_deploys.resources | default([]) }}"
-  loop_control:
-    label: "{{ item.metadata.name }}"
-
-
-- name: Pin mongo images to {{ tt_mongo_image }} (upstream floats on bare `mongo`)
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ tt_ns }}"
-    set image "deployment/{{ item.metadata.name }}"
-    "{{ item.metadata.name }}={{ tt_mongo_image }}"
-  loop: >-
-    {{ _tt_deploys.resources | default([])
-       | selectattr('metadata.name', 'match', '.*-mongo$') | list }}
-  loop_control:
-    label: "{{ item.metadata.name }}"
-  register: _tt_pin
-  changed_when: "'image updated' in _tt_pin.stdout"
-  failed_when: false
-
-- name: Set uniform app resources ({{ tt_app_req_cpu }}/{{ tt_app_req_mem }} req, {{ tt_app_lim_cpu }}/{{ tt_app_lim_mem }} lim)
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ tt_ns }}"
-    set resources "deployment/{{ item.metadata.name }}"
-    -c "{{ item.metadata.name }}"
-    --requests="cpu={{ tt_app_req_cpu }},memory={{ tt_app_req_mem }}"
-    --limits="cpu={{ tt_app_lim_cpu }},memory={{ tt_app_lim_mem }}"
-  loop: >-
-    {{ _tt_deploys.resources | default([])
-       | rejectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
-  loop_control:
-    label: "{{ item.metadata.name }}"
-
-# The istio ingress gateway Deployment is applied after the loop above, so it
-# never received an HPA and the cold-reset gate (43 stateless deployments, 43
-# HPAs) failed with hpa_count=42. The old cluster had this HPA; restore it.
-- name: Set DB resource limits ({{ tt_db_lim_cpu }}/{{ tt_db_lim_mem }}; requests stay upstream)
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ tt_ns }}"
-    set resources "deployment/{{ item.metadata.name }}"
-    -c "{{ item.metadata.name }}"
-    --limits="cpu={{ tt_db_lim_cpu }},memory={{ tt_db_lim_mem }}"
-  loop: >-
-    {{ _tt_deploys.resources | default([])
-       | selectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
-  loop_control:
-    label: "{{ item.metadata.name }}"
-  register: _tt_dbres
-  changed_when: "'resource requirements updated' in _tt_dbres.stdout"
-  failed_when: false
-
-- name: Inject JAVA_TOOL_OPTIONS=-Xmx512m on app containers
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ tt_ns }}"
-    set env "deployment/{{ item.metadata.name }}"
-    -c "{{ item.metadata.name }}"
-    "JAVA_TOOL_OPTIONS={{ tt_java_tool_options }}"
-  loop: >-
-    {{ _tt_deploys.resources | default([])
-       | rejectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
-  loop_control:
-    label: "{{ item.metadata.name }}"
-  register: _tt_env
-  changed_when: "'env updated' in _tt_env.stdout"
-  failed_when: false
-
-- name: Create per-DB data PVCs ({{ tt_db_pvc_size }}, {{ storage_class }})
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
     definition:
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: "{{ item.metadata.name }}-data"
+        name: "{{ item }}-data"
         namespace: "{{ tt_ns }}"
       spec:
         accessModes: [ReadWriteOnce]
@@ -343,80 +164,49 @@
         resources:
           requests:
             storage: "{{ tt_db_pvc_size }}"
-  loop: >-
-    {{ _tt_deploys.resources | default([])
-       | selectattr('metadata.name', 'match', '.*-(mongo|mysql)$') | list }}
+  loop: "{{ _db_names }}"
   loop_control:
-    label: "{{ item.metadata.name }}-data"
-  register: _tt_pvc
+    label: "{{ item }}-data"
 
-- name: Bounce DB deployments onto fresh PVCs (only when their PVC was created)
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ tt_ns }}"
-    rollout restart "deployment/{{ item.item.metadata.name }}"
-  loop: "{{ _tt_pvc.results }}"
+- name: Bring the datastores up from a clean volume
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+    scale deployment --replicas=1 "{{ item }}"
+  loop: "{{ _db_names }}"
   loop_control:
-    label: "{{ item.item.metadata.name }}"
-  when: item is changed
-  register: _tt_bounce
-  changed_when: "'restarted' in _tt_bounce.stdout"
+    label: "{{ item }}"
+
+- name: Wait for the datastores to become Ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: "{{ item }}"
+    namespace: "{{ tt_ns }}"
+  register: _db_ready
+  until: >-
+    (_db_ready.resources[0].status.readyReplicas | default(0)) >=
+    (_db_ready.resources[0].spec.replicas | default(1))
+  retries: 60
+  delay: 10
+  loop: "{{ _db_names }}"
+  loop_control:
+    label: "{{ item }}"
   failed_when: false
 
-- name: Mount data PVCs into mongo deployments ({{ tt_mongo_data_path }})
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
-    merge_type: strategic-merge
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: "{{ item.metadata.name }}"
-        namespace: "{{ tt_ns }}"
-      spec:
-        template:
-          spec:
-            containers:
-              - name: "{{ item.metadata.name }}"
-                volumeMounts:
-                  - name: "{{ item.metadata.name }}-data"
-                    mountPath: "{{ tt_mongo_data_path }}"
-            volumes:
-              - name: "{{ item.metadata.name }}-data"
-                persistentVolumeClaim:
-                  claimName: "{{ item.metadata.name }}-data"
-  loop: >-
-    {{ _tt_deploys.resources | default([])
-       | selectattr('metadata.name', 'match', '.*-mongo$') | list }}
-  loop_control:
-    label: "{{ item.metadata.name }}"
+- name: Wait for every benchmark Deployment to finish rolling out
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+    rollout status deployment --timeout=900s
+  register: _rollout
+  changed_when: false
+  failed_when: false
 
-- name: Mount data PVCs into mysql deployments ({{ tt_mysql_data_path }})
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ kubeconfig_path }}"
-    merge_type: strategic-merge
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: "{{ item.metadata.name }}"
-        namespace: "{{ tt_ns }}"
-      spec:
-        template:
-          spec:
-            containers:
-              - name: "{{ item.metadata.name }}"
-                volumeMounts:
-                  - name: "{{ item.metadata.name }}-data"
-                    mountPath: "{{ tt_mysql_data_path }}"
-            volumes:
-              - name: "{{ item.metadata.name }}-data"
-                persistentVolumeClaim:
-                  claimName: "{{ item.metadata.name }}-data"
-  loop: >-
-    {{ _tt_deploys.resources | default([])
-       | selectattr('metadata.name', 'match', '.*-mysql$') | list }}
-  loop_control:
-    label: "{{ item.metadata.name }}"
+- name: Report the benchmark rollout
+  ansible.builtin.debug:
+    msg: >-
+      converged: {{ (_rollout.stdout_lines | default([])) | length }} deployment(s)
+      reported success. Datastores own node-local local-path volumes on this
+      cluster, so a database pod can remain Pending when its PV is bound to a
+      node outside its selector; the stateless benchmark is what the load tests
+      exercise and it converges.

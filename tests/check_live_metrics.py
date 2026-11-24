@@ -68,15 +68,15 @@ results = [
       f'count(kube_deployment_spec_replicas{{namespace="{a.namespace}"}})', 3),
     check("HPA current/desired (native baseline absent while AURORA owns replicas)",
       f'count(kube_horizontalpodautoscaler_status_current_replicas{{namespace="{a.namespace}"}})', 0),
-    # After the mesh retirement only reporter=source remains; destination-side
-# histograms are gone, so the Istio-derived SLO is no longer computable.
-    check("Istio series present (reporter=source survives the mesh retirement)",
-      'count(istio_requests_total)', 1),
-    check("Istio request rate (any reporter)",
-      'sum(rate(istio_requests_total[5m]))', 0.0),
-    check("frontend p90 computable (needs destination-side histograms)",
-      f'histogram_quantile(0.90, sum by (le) (rate(istio_request_duration_milliseconds_bucket'
-      f'{{reporter="destination",destination_workload="{a.front}"}}[5m])))', 0),
+    # The mesh is retired. The application path is Envoy Gateway, so the RED
+    # signals come from the gateway proxy and from Beyla, not from Istio.
+    check("Envoy Gateway upstream requests/s",
+      'sum(rate(envoy_cluster_upstream_rq_total[5m]))', 0.0),
+    check("Beyla RED metrics (http_server_request_duration_seconds)",
+      'count(http_server_request_duration_seconds_count)', 0),
+    check("frontend p99 from Beyla (ms)",
+      f'histogram_quantile(0.99, sum by (le) (rate('
+      f'http_server_request_duration_seconds_bucket{{service_name="{a.front}"}}[5m])))', 0),
     check("Envoy gateway upstream active",
       'sum(envoy_cluster_upstream_rq_active)', 1),
     # Only present once the off-cluster Alloy gateway is deployed (new in this repo).
@@ -88,13 +88,13 @@ results = [
 
 # freshness: the newest istio sample must be recent
 try:
-    res = query('max(timestamp(istio_requests_total))')
+    res = query('max(timestamp(envoy_cluster_upstream_rq_total))')
     newest = max(float(x["value"][1]) for x in res) if res else 0.0
     if not newest:
-        raise RuntimeError("no istio series at all")
+        raise RuntimeError("no envoy gateway series at all")
     age = now - newest
     ok = age <= a.max_age
-    print(f"{'PASS' if ok else 'FAIL'} telemetry freshness: newest sample {age:.0f}s old (max {a.max_age:.0f}s)")
+    print(f"{'PASS' if ok else 'FAIL'} telemetry freshness: newest envoy sample {age:.0f}s old (max {a.max_age:.0f}s)")
     results.append(ok)
 except Exception as exc:
     print(f"FAIL telemetry freshness: {exc}")

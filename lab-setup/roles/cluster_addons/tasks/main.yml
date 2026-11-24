@@ -35,6 +35,11 @@
 - import_tasks: control_plane_isolation.yaml
   tags: [control-plane]
 
+# Pin the autoscaler controllers to the masters; the benchmark is pinned to the
+# workers by the rendered TrainTicket manifests.
+- import_tasks: autoscaler_placement.yaml
+  tags: [control-plane, autoscaler]
+
 - import_tasks: kubelet_reservations.yaml
   tags: [kubelet-reservations]
 
