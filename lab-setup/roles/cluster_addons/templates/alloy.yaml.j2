@@ -172,6 +172,12 @@ spec:
         app: alloy
     spec:
       serviceAccountName: alloy
+      # Pin Alloy to a control-plane node. Nothing constrained it before, so the
+      # scheduler put it on a benchmark worker (worker1, later worker2), where it
+      # competed with the load-test pods for CPU/memory. Pod IPs (10.233.0.0/16)
+      # are routable from every node, so a master can scrape all kubelets.
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
       containers:
       - name: alloy
         image: {{ alloy_image }}
