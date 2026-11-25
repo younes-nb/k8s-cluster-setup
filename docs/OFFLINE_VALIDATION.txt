@@ -1,27 +1,22 @@
-# Offline validation
+PASS 36 YAML files, shell syntax and Python compilation
+PASS 12 active YAML templates render with fixture vars
+PASS Gateway LoadBalancer allocates no NodePorts
+PASS Gateway Service type is LoadBalancer
+PASS 11 Grafana dashboards, 104 panels (JSON/UID/reference checks)
+PASS missing unverified readiness fails closed
+PASS resource preservation, selector injection, readiness and NodePort removal fixtures
+PASS tracked secret files are absent
 
-```
-PASS: 42 YAML files, shell syntax and Python compilation
-PASS: 8 active YAML templates render with the repo group_vars
-PASS: Gateway LoadBalancer allocates no NodePorts
-PASS: Gateway Service type is LoadBalancer
-PASS: 7 Grafana dashboards, 59 panels (JSON/UID/reference checks)
-PASS: resource preservation, selector injection, readiness and NodePort removal fixtures
-PASS: tracked secret files are absent
-```
+ALL OFFLINE CHECKS PASSED
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
 
-Run it with:
+OK
+FAIL zero may be valid only if present empty result
+FAIL hosts unexpected value or identity: [({'instance': 'master1'}, 1.0)]
+FAIL age unexpected value or identity: [({}, 60.0)]
+PASS zero (1 series)
 
-```bash
-python3 tests/static_validate.py
-```
+Wrapper --help succeeded; --start-from=bogus returned 2. No Docker, Ansible or Kubernetes runtime validation was performed in this environment.
 
-What it covers: YAML/shell/Python syntax, rendering of every active Jinja
-template with the repo's real `group_vars`, the Gateway having no NodePorts, the
-dashboard JSON (uids, panel ids, datasource uids, non-empty targets), the
-upstream renderer preserving resources (including *absence* of resources),
-NodePort removal, and the absence of tracked credentials.
-
-What it does **not** cover (see docs/VALIDATION.md): Helm chart validity, image
-availability, CRD compatibility, Ansible collection resolution against a real
-inventory, and anything requiring a live cluster.

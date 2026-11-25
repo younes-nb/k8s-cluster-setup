@@ -1,0 +1,386 @@
+{
+  "uid": "lab-databases",
+  "title": "09 \u2014 Databases and runtimes",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "tags": [
+    "research-lab"
+  ],
+  "timezone": "utc",
+  "panels": [
+    {
+      "id": 1,
+      "title": "MongoDB exporter health",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mongodb_up",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "MySQL exporter health",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mysql_up",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "MongoDB connections",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mongodb_ss_connections{conn_type=\"current\"}",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "MySQL connections",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "mysql_global_status_threads_connected",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "DB operation P90",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(.9,sum by(service_name,le)(rate(db_client_operation_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "JVM memory used",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(service_name)(jvm_memory_used_bytes)",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "JVM GC duration",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(service_name)(rate(jvm_gc_duration_seconds_sum[1m]))",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "JVM threads",
+      "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(service_name)(jvm_thread_count)",
+          "legendFormat": "{{service_name}} {{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    }
+  ]
+}
+

@@ -44,12 +44,14 @@ data:
       unmatched: heuristic
     discovery:
       instrument:
-        # instrument only the Train-Ticket application services; the
-        # monitoring/kube-system/cert-manager namespaces are already in
-        # Beyla's default exclusion list, and services exporting their own
-        # OTel telemetry (e.g. Istio) are auto-skipped by
-        # exclude_otel_instrumented_services (default true).
-        - k8s_namespace: train-ticket
+        - k8s_namespace: {{ tt_ns }}
+    network:
+      enable: true
+    otel_metrics_export:
+      interval: 5s
+      features: [application, application_service_graph, application_process, application_runtime, network, stats]
+      buckets:
+        duration_histogram: [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.22, 0.3, 0.5, 0.75, 1, 2, 5, 10, 30]
 
 ---
 apiVersion: apps/v1
@@ -82,12 +84,10 @@ spec:
         env:
           - name: BEYLA_SERVICE_NAMESPACE
             value: "train-ticket"
-          - name: BEYLA_TRACE_PRINTER
-            value: "text"
           - name: BEYLA_LOG_LEVEL
             value: "info"
           - name: BEYLA_INTERNAL_METRICS_PROMETHEUS_PORT
-            value: "8080"
+            value: "18085"
           - name: BEYLA_KUBE_METADATA_ENABLE
             value: "true"
           # Beyla 3.x REQUIRES a discovery section (or network metrics config)
@@ -103,21 +103,19 @@ spec:
           - name: OTEL_EXPORTER_OTLP_ENDPOINT
             value: "http://{{ monitoring_host }}:4317"
         ports:
-        - {containerPort: 8080, name: metrics}
+        - {containerPort: 18085, name: metrics}
         volumeMounts:
         - {name: conf, mountPath: /config}
         - {name: debugfs, mountPath: /sys/kernel/debug, readOnly: true}
         - {name: tracefs, mountPath: /sys/kernel/tracing, readOnly: true}
         securityContext:
           privileged: true
-          capabilities:
-            add: [SYS_ADMIN, SYS_RESOURCE, CAP_DAC_OVERRIDE, CAP_SYS_PTRACE, CAP_BPF]
         resources:
           requests: {cpu: "100m", memory: "256Mi"}
           limits: {cpu: "2000m", memory: "1Gi"}
         readinessProbe:
           tcpSocket:
-            port: 8080
+            port: 18085
           initialDelaySeconds: 15
           periodSeconds: 10
       volumes:
@@ -145,5 +143,15 @@ spec:
   selector:
     app: beyla
   ports:
-  - {name: metrics, port: 8080, targetPort: 8080}
+  - {name: metrics, port: 18085, targetPort: 18085}
+
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata: {name: beyla, namespace: {{ monitoring_ns }}}
+spec:
+  selector: {matchLabels: {app: beyla}}
+  podMetricsEndpoints:
+    - {port: metrics, interval: 5s, scrapeTimeout: 4s}
 

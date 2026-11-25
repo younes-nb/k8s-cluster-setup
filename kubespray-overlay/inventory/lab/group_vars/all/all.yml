@@ -51,3 +51,4 @@ ntp_servers:
 unsafe_show_logs: false
 
 allow_unsupported_distribution_setup: false
+

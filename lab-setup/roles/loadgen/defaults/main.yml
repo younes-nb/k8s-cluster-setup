@@ -18,3 +18,6 @@ k6_open_loop: "1"
 k6_pre_allocated_vus: "100"
 # Off-cluster load generator host metrics (node_exporter on the loadgen).
 loadgen_host_metrics: true
+
+k6_sha256: "{{ lookup('env', 'K6_SHA256') }}"
+

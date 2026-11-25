@@ -3,7 +3,11 @@
   hosts: master1
   become: true
   gather_facts: false
+  roles: [k8s_ansible_deps]
   tasks:
+    - name: Confirm exclusive replica ownership
+      ansible.builtin.assert:
+        that: lookup('env', 'LAB_EXCLUSIVE_WRITER_CONFIRMED') == 'true'
     - name: Read the benchmark Deployments
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig_path }}"
@@ -24,7 +28,7 @@
           force the baseline.
       loop: >-
         {{ deployments.resources
-           | rejectattr('metadata.name','match','.*-(mongo|mysql|redis)$')
+           | rejectattr('metadata.name','match','.*-(mongo|mysql|redis|rabbitmq)$')
            | subelements('spec.template.spec.containers') }}
       loop_control:
         label: "{{ item.0.metadata.name }}/{{ item.1.name }}"
@@ -55,7 +59,7 @@
                     averageUtilization: "{{ tt_cpu_avg_utilization }}"
       loop: >-
         {{ deployments.resources
-           | rejectattr('metadata.name','match','.*-(mongo|mysql|redis)$') | list }}
+           | rejectattr('metadata.name','match','.*-(mongo|mysql|redis|rabbitmq)$') | list }}
       loop_control:
         label: "{{ item.metadata.name }}"
 
@@ -65,3 +69,4 @@
           native CPU HPA baseline applied (min {{ tt_min_replicas }},
           max {{ tt_max_replicas }}, target {{ tt_cpu_avg_utilization }}%).
           Stop every other autoscaler first -- never run two writers.
+

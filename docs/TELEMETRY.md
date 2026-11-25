@@ -1,66 +1,26 @@
-# Telemetry contract
+# Telemetry contract (candidate; confirm exported labels and names on the live cluster)
 
-One monitoring architecture, outside the cluster, plus in-cluster collectors that
-must reach pod IPs.
+Single stack: node Alloy, cluster Alloy, separate worker profiling Alloy, Beyla, and external Alloy gateway + Mimir/Loki/Tempo/Pyroscope/Grafana. No parallel service mesh and no alternative monitoring profile. Each scrape target must have one owner. Node label coverage is master1..3, worker1..3, loadgen, mon1. In the benchmark, service identity should map to the owning Deployment rather than changing Pod names. Preserve per-Pod/instance identity before aggregating OTLP counters and histograms; verify no collisions, dropped points or duplicated observations.
 
-| Layer | Where | Pushes to |
-|---|---|---|
-| Alloy (scraper) | in-cluster Deployment, pinned to a control-plane node | Mimir `18080`, Loki `3100` |
-| Alloy node collector | in-cluster DaemonSet | Mimir (host + CRI metrics) |
-| Alloy profile collector | in-cluster DaemonSet on workers | Pyroscope `4040` |
-| Beyla | in-cluster DaemonSet | OTLP → **off-cluster** Alloy gateway `:4317` |
-| Alloy gateway | mon1 | Mimir (metrics), Tempo `4317` (traces) |
-| Mimir / Loki / Tempo / Grafana / Pyroscope | mon1, `/dev/sdb` | — |
+## Online features
 
-5 s resolution. Retention 1440 h (60 days).
+Five-second target scrapes, exports and recording rule evaluation; one-minute rolling rates/histogram windows are starting settings, not paper-specific constants. Check real observation/export/ingestion delay separately. Raw application samples and autoscaler features must satisfy the 15-second freshness gate. Some diagnosis-only telemetry uses 15s or slower and must not masquerade as fresh online features. Use Kubernetes watches for desired, scheduled, running, ready and available replicas and timestamp scale actions. The controller is not implemented by this project.
 
-## Required signals
+- `autoscaler:edge_requests:rate1m`, `autoscaler:edge_latency:p90_seconds`, `autoscaler:edge_failure:rate1m`, `autoscaler:edge_slo:violation` from direct Beyla service graph metrics. Verify client and server labels, namespace labels, direction, histogram unit, source identity, and exactly one observation per intended invocation. Do not sum client and server durations as one measurement.
+- `autoscaler:service_requests:rate1m`, `autoscaler:service_latency:p90_seconds`, `autoscaler:service_telemetry_age:seconds` from HTTP server histograms; extend separately for other supported protocols where relevant.
+- `autoscaler:frontend_slo:violation`: server-observed frontend P90 > 0.2 seconds; edge detection uses 0.22 seconds (PBScaler SLO 0.2s, alpha 0.2). The paper's evaluation is the fraction of valid end-to-end P90 evaluation observations violating the SLO; use fixed 15s evaluation instants and document the chosen histogram window. Distinguish client/gateway/server measurement boundaries. Validate the reference metric independently at the client; do not compare different boundaries as equivalent. P99 and per-request deadline fractions are separate metrics. Missing/zero-traffic/NaN intervals must not become a healthy 0. No claim that PBScaler baseline has been executed.
+- `autoscaler:pod_cpu:cores`, `autoscaler:pod_cpu:request_ratio`, `autoscaler:pod_cpu:throttling_ratio`, `autoscaler:deployment_unavailable:replicas`. Missing upstream CPU requests mean no valid request-relative utilization; keep absolute usage. Audit namespace/pod labels and ensure there is one kube-state-metrics series per entity. Do not invent requests.
+- cAdvisor and kube-state-metrics provide memory, OOM, resource state, pod network; node exporter provides host pressure and disk/network. Beyla process/runtime/TCP and DB exporters extend evidence. Verify supported JVM versions, runtime metric names, database authentication, expected exporter identities, kernel/BTF capabilities and profile availability. The source config enables runtime features; it does not establish that legacy Java images actually export them. Use compatible JMX/OpenTelemetry instrumentation only if needed, keeping application resources and workload constant and documenting overhead.
+- Logs/events from Alloy to Loki: test structured application exceptions, Kubernetes reasons and timestamps; not all errors are capacity errors. Use bounded precomputed log features if needed, not raw-log analysis in every 15s cycle. Trace and profiling data are diagnostics; verify trace linkage and Pyroscope profile labels. Envoy tracing is sampled at 10%; direct service graph metrics must not depend on that sampling.
+- k6 custom counters (`lab_attempted`, `lab_good`, `lab_slow_success`, `lab_failed`, `lab_timeout`) are independent evaluation ground truth, not mandatory controller inputs. Timeout is a subset of failed. The smoke script classifies HTTP outcomes only and measures `http_req_duration` (excludes connection setup). Real business outcome counters, wall-clock client deadline, client cancellation, connection failures, dropped iterations and graceful termination require the actual research scripts. Outstanding requests represent observed starts minus mutually exclusive observed terminals, not proof of overload. Counter loss on process crash/export failures is an uncertainty. Do not infer that all failures are horizontally scalable.
 
-| Signal | Source |
-|---|---|
-| CPU request utilisation | cAdvisor + kube-state-metrics (`usage / request`) |
-| CPU throttling | `container_cpu_cfs_throttled_periods_total / ..._periods_total` |
-| Memory working set / limit | cAdvisor + kube-state-metrics |
-| Pod / container CPU, network, disk, restarts, OOM | cAdvisor |
-| Requests / limits, readiness, restarts, HPA state | kube-state-metrics |
-| Node CPU/mem/net/disk | node_exporter (Alloy DaemonSet; loadgen + mon1 exporters) |
-| Request rate, latency, errors, TCP | Beyla `http_server_request_duration_seconds`, `beyla_*` |
-| **RED per service** | Envoy Gateway `envoy_cluster_upstream_rq_*` |
-| Traces | Tempo (OTLP from Beyla / Envoy) |
-| Logs | Loki (Alloy log tail) |
-| Profiles | Pyroscope (eBPF CPU) |
-| k6 client outcomes | k6 remote write → Mimir |
+## Runtime name verification
 
-## Not available (documented, not fabricated)
+Use Mimir `/prometheus/api/v1/label/__name__/values` and query raw samples during controlled traffic. Verify the exact version's classic/native histogram names; do not map missing signals to `vector(0)` or infer dependencies from only a frontend metric. Update the single set of recording rules, dashboards and live contract together. Dashboard panels for version-dependent metrics are candidate queries until exercised. Check that `anonymous` is Mimir's actual single-tenant ruler directory and rules are loaded. Set each requested feature's evidence status measured/unsupported/unknown. Do not mark unsupported optional diagnostics as implemented. Service graph coverage and SLO telemetry are mandatory.
 
-| Missing | Consequence |
-|---|---|
-| **Destination-side Istio histograms** (`reporter="destination"`) | the mesh is retired; the old Istio-derived front-p90 SLO is gone. Use Envoy/Beyla or k6. `check_live_metrics.py` reports this explicitly. |
-| `mongodb_*` internal counters | no scrape target for the exporter; container-level DB metrics only |
-| JVM / heap / GC (`jvm_*`, `tomcat_*`, `http_server_requests_*`) | the images have no MDC filter and no tracing on the classpath |
-| Spring request IDs / distributed tracing in-app | Istio's `X-Request-ID` was the correlation key; Beyla emits `traceparent` |
-| Water: `istio_requests_total{reporter="destination"}` | 0 series after migration |
+## Future autoscaler telemetry
 
-## Known gotchas
+Once the algorithm exists, export decision-cycle and inference durations, observation age, ranked bottleneck probabilities, estimated scaling effectiveness, desired/ready/pending replicas, action reason and result, observed readiness delays, and replica ownership. Include experiment identifiers and timestamps; avoid high-cardinality request IDs in metric labels. Store a durable structured action log. A future autoscaler dashboard is intentionally not fabricated before these metrics exist. Use the 15-second cycle acceptance criterion end-to-end.
 
-- `reject_old_samples_max_age: 9999h` in Loki — `0` is NOT "disabled" in Loki 3.x; it means "reject anything older than now".
-- Loki caps a query at 5 000 entries; chunk accordingly.
-- Mimir bucket series expire; query promptly.
-- Two kube-state-metrics replicas were previously scraped twice (duplicate series). The KSM scrape is now via the ServiceMonitor only.
-- `kube_*` series must be deduped with `max by (...)` if a second scrape ever appears.
-- `node_exporter` metrics are per-instance; the Alloy unix exporter only covers its own host. For cluster-wide node capacity use cAdvisor or `kube_node_status_*`.
+References for runtime validation: https://grafana.com/docs/beyla/latest/configure/export-data/ ; https://grafana.com/docs/alloy/latest/reference/components/ ; https://grafana.com/docs/mimir/latest/configure/ ; https://gateway.envoyproxy.io/v1.6/tasks/observability/proxy-trace/ ; https://grafana.com/docs/tempo/latest/configuration/ ; https://grafana.com/docs/pyroscope/latest/configure-server/reference-configuration-parameters/ . Check documentation for the actual pinned versions, not only latest.
 
-## Dashboards (Research Lab folder, provisioned)
-
-| Dashboard | Coverage |
-|---|---|
-| 01 Lab overview | node coverage, CPU/mem, readiness, replicas, gateway probe, scrape failures, freshness |
-| 02 Load generator | k6 rate, failures, latency, VUs, dropped iterations, outcomes, loadgen CPU/net |
-| 03 Node resources | CPU, memory, disk, network, TCP retransmits, clock, FDs |
-| 04 Kubernetes | replicas, pending, throttling, restarts, API, DNS, quota |
-| 05 RED / dependency / SLO | service + edge rate/latency/errors, frontend p90, deadline, Envoy, Beyla |
-| 06 Monitoring health | backend scrapes, Mimir series/ingestion, Loki bytes, Tempo spans, host disk/mem/CPU |
-| 07 Logs | benchmark errors, all benchmark logs, collector logs |
-
-Empty panels mean "the exporter/version/event is absent", not zero. Check the
-collector before trusting a blank graph.

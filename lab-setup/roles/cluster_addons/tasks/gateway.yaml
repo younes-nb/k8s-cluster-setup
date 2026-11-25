@@ -1,10 +1,24 @@
 ---
-# MetalLB (private L2 application VIP) + Envoy Gateway (Gateway API data plane).
-#
-# Replaces the classic istio-ingressgateway + the retired in-namespace Gateway
-# API proxy. There are NO NodePorts on the application path: MetalLB advertises
-# ``gateway_private_ip`` on the lab L2 segment and Envoy serves port 80 there.
-
+- name: Query existing application Gateway (if CRDs exist)
+  ansible.builtin.command: kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} get gateway train-ticket -o name
+  register: existing_gateway
+  changed_when: false
+  failed_when: false
+- name: Install ARP preflight utility on loadgen
+  ansible.builtin.apt:
+    name: iputils-arping
+    state: present
+  delegate_to: loadgen
+- name: Check VIP is unused before initial Gateway creation
+  ansible.builtin.shell: |
+    set -eu
+    iface=$(ip -o route get {{ gateway_private_ip }} | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)
+    test -n "$iface"
+    arping -D -I "$iface" -c 3 -w 5 {{ gateway_private_ip }}
+  args: {executable: /bin/bash}
+  delegate_to: loadgen
+  when: existing_gateway.rc != 0
+  changed_when: false
 - name: Install pinned MetalLB manifests (application VIP only)
   ansible.builtin.command: >-
     kubectl --kubeconfig={{ kubeconfig_path }} apply -f
@@ -78,3 +92,4 @@
       - "application: http://{{ gateway_private_ip }}/ (Envoy Gateway, no NodePort)"
       - "GatewayClass: {{ gateway_class | default('lab-envoy') }}"
       - "gateway replicas: {{ gateway_replicas }}"
+

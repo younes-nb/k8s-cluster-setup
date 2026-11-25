@@ -26,6 +26,14 @@ metadata:
   name: benchmark
   namespace: {{ tt_ns }}
 spec:
+  telemetry:
+    tracing:
+      samplingRate: 10
+      provider:
+        type: OpenTelemetry
+        backendRefs:
+          - name: lab-otlp
+            port: 4317
   provider:
     type: Kubernetes
     kubernetes:
@@ -105,3 +113,22 @@ spec:
       path: /stats/prometheus
       interval: 5s
       scrapeTimeout: 4s
+---
+apiVersion: v1
+kind: Service
+metadata: {name: lab-otlp, namespace: {{ tt_ns }}}
+spec:
+  ports: [{name: grpc, port: 4317, targetPort: 4317, appProtocol: kubernetes.io/h2c}]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: lab-otlp-external
+  namespace: {{ tt_ns }}
+  labels: {kubernetes.io/service-name: lab-otlp, endpointslice.kubernetes.io/managed-by: lab-ansible}
+addressType: IPv4
+ports: [{name: grpc, protocol: TCP, port: 4317}]
+endpoints:
+  - addresses: ["{{ monitoring_host }}"]
+    conditions: {ready: true}
+

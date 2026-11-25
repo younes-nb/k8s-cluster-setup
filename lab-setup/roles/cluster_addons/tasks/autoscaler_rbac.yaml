@@ -1,0 +1,7 @@
+---
+- name: Install scoped autoscaler identity (no controller deployment)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    template: autoscaler-rbac.yaml.j2
+

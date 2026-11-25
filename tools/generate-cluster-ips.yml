@@ -10,8 +10,8 @@
 
   tasks:
     - name: Resolve IPv4 for each CloudLab host
-      ansible.builtin.command: >-
-        bash -lc "getent ahostsv4 {{ item.value }} | awk 'NR==1{print $1}'"
+      ansible.builtin.command:
+        argv: [getent, ahostsv4, "{{ item.value }}"]
       loop: "{{ cloudlab_hosts | dict2items }}"
       register: resolved
       changed_when: false
@@ -20,7 +20,7 @@
       ansible.builtin.set_fact:
         cloudlab_ips: >-
           {{ (cloudlab_ips | default({}))
-             | combine({item.item.key: item.stdout}) }}
+             | combine({item.item.key: item.stdout.split()[0]}) }}
       loop: "{{ resolved.results }}"
 
     - name: Fail if any host did not resolve
@@ -56,3 +56,4 @@
       loop:
         - ../lab-setup/inventory/group_vars/all/cluster_ips.yml
         - ../kubespray-overlay/inventory/lab/group_vars/all/cluster_ips.yml
+

@@ -1,0 +1,11 @@
+{
+  "deployments": ["REPLACE_WITH_ALL_EXPECTED_PINNED_BENCHMARK_DEPLOYMENTS"],
+  "active_services": ["REPLACE_WITH_INDEPENDENTLY_EXPECTED_ACTIVE_SERVICES"],
+  "active_edges": [["REPLACE_CLIENT", "REPLACE_SERVER"]],
+  "extra_metrics": [
+    {"name": "etcd metrics all three members", "query": "count(count by(instance)(etcd_disk_wal_fsync_duration_seconds_count)) == 3", "fresh_selector": "etcd_disk_wal_fsync_duration_seconds_count"},
+    {"name": "Kubernetes API requests", "query": "sum(rate(apiserver_request_total[1m]))", "fresh_selector": "apiserver_request_total"},
+    {"name": "Beyla network bytes", "query": "sum(rate(beyla_network_flow_bytes_total[1m]))", "fresh_selector": "beyla_network_flow_bytes_total"}
+  ]
+}
+

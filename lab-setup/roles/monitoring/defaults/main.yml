@@ -58,3 +58,4 @@ monitoring_ports:
 # Raising it is what makes the per-run Mimir/Loki dumps unnecessary: every run
 # stays queryable long after it finishes.
 monitoring_retention: 1440h
+

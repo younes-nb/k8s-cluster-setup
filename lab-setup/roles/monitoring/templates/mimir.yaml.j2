@@ -36,7 +36,17 @@ store_gateway:
 
 limits:
   compactor_blocks_retention_period: {{ monitoring_retention }}
+  native_histograms_ingestion_enabled: true
   max_label_names_per_series: 50
   ingestion_rate: 500000
   ingestion_burst_size: 2000000
   max_global_series_per_user: 4000000
+
+ruler_storage:
+  backend: local
+  local:
+    directory: /etc/mimir/rules
+ruler:
+  rule_path: /mimir/ruler-tmp
+  enable_api: false
+

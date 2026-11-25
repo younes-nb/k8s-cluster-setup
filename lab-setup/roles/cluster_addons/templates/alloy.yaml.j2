@@ -11,7 +11,12 @@ metadata:
   name: alloy-scrape
 rules:
   - apiGroups: [""]
-    resources: [nodes, nodes/metrics, nodes/proxy, services, endpoints, pods, pods/log]
+    resources: [nodes, nodes/metrics, services, endpoints, pods, events]
+    verbs: [get, list, watch]
+  - nonResourceURLs: ["/metrics"]
+    verbs: [get]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
     verbs: [get, list, watch]
   - apiGroups: [discovery.k8s.io]
     resources: [endpointslices]
@@ -44,29 +49,32 @@ metadata:
 data:
   config.alloy: |
     prometheus.operator.servicemonitors "all" {
+      // The kube-prometheus-stack ServiceMonitors (apiserver, coredns, ...) use
+      // local CA files; Alloy rejects those unless this is true. podmonitors does
+      // not support the attribute, so it is set only here.
+      allow_arbitrary_file_access = true
+      // ServiceMonitors set interval 5s but no timeout; Alloy's default 10s
+      // timeout would exceed the interval and the whole ServiceMonitor is dropped
+      // ("scrape timeout greater than scrape interval").
+      scrape {
+        default_scrape_interval = "5s"
+        default_scrape_timeout  = "4s"
+      }
       forward_to = [prometheus.remote_write.mimir.receiver]
     }
     prometheus.operator.podmonitors "all" {
       forward_to = [prometheus.remote_write.mimir.receiver]
     }
-    prometheus.operator.probes "all" {
-      forward_to = [prometheus.remote_write.mimir.receiver]
-    }
 
-    // One kubelet target per Kubernetes node. The inventory `nodes` group also
-    // contains `loadgen`, which is NOT a Kubernetes node and has no kubelet, so
-    // it is filtered out by the "not in" test below.
     prometheus.scrape "kubelet" {
       targets = [
-        {% for node in groups['nodes'] %}
-        {% if node not in ['loadgen'] %}
-        {"__address__" = "kubernetes.default.svc:443", "__metrics_path__" = "/api/v1/nodes/{{ node }}/proxy/metrics/cadvisor", "node" = "{{ node }}"},
-        {% endif %}
+        {% for node in groups['control_plane'] + groups['workers'] %}
+        {"__address__" = "{{ cloudlab_private_ips[node] }}:10250", "__metrics_path__" = "/metrics/cadvisor", "node" = "{{ node }}"},
         {% endfor %}
       ]
       forward_to = [prometheus.remote_write.mimir.receiver]
       scrape_interval = "{{ alloy_scrape_interval }}"
-      scrape_timeout = "{{ alloy_scrape_interval }}"
+      scrape_timeout = "{{ alloy_scrape_timeout }}"
       scheme = "https"
       bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
       tls_config {
@@ -83,81 +91,64 @@ data:
     // `sum()` queries double-counted — e.g. cluster CPU capacity read 480 cores
     // instead of 240 (2026-11-19). Delete one of the two; keep the ServiceMonitor.
 
-    prometheus.exporter.unix "node_exporter" {
-      rootfs_path = "/host"
-      procfs_path = "/host/proc"
-      sysfs_path = "/host/sys"
-      set_collectors = ["cpu", "meminfo", "filesystem", "loadavg", "netdev", "netstat", "diskstats", "vmstat", "stat", "time", "timex", "uname", "boottime", "entropy", "filefd", "interrupts", "ipvs", "ksmd", "mountstats", "nfs", "nfsd", "os", "pressure", "rapl", "schedstat", "sockstat", "softnet", "thermal_zone", "xfs", "zfs", "zoneinfo", "btrfs", "buddyinfo", "conntrack", "dmi", "edac", "fibrechannel", "hwmon", "infiniband", "mdadm", "nvme", "powersupplyclass", "udp_queues"]
-    }
-
-    prometheus.scrape "node_exporter" {
-      targets = prometheus.exporter.unix.node_exporter.targets
+    prometheus.exporter.self "cluster" {}
+    prometheus.scrape "self" {
+      targets = prometheus.exporter.self.cluster.targets
+      scrape_interval = "15s"
+      job_name = "alloy-cluster"
       forward_to = [prometheus.remote_write.mimir.receiver]
-      scrape_interval = "{{ alloy_scrape_interval }}"
-      scrape_timeout = "{{ alloy_scrape_interval }}"
     }
-
     prometheus.remote_write "mimir" {
       endpoint {
-        // Monitoring is no longer in the cluster: Mimir runs on the monitoring
-        // host (currently 10.10.1.1, the loadgen's private address). Alloy stays
-        // in the cluster because pod IPs are not routable from outside.
         url = "http://{{ monitoring_host }}:{{ monitoring_mimir_port }}/api/v1/push"
       }
     }
-
-    // OTLP -> Prometheus bridge: Beyla exports RED metrics over OTLP gRPC;
-    // Alloy's receiver only serves the signals that have consumers, so an
-    // empty metrics output makes OTLP metrics fail with
-    // "Unimplemented: unknown service ...MetricsService". Convert and push
-    // them into the same remote_write path as the scraped metrics.
-    otelcol.exporter.prometheus "beyla" {
-      forward_to = [prometheus.remote_write.mimir.receiver]
+    loki.source.kubernetes_events "events" {
+      forward_to = [loki.write.remote.receiver]
     }
-
-    discovery.kubernetes "pods" {
-      role = "pod"
-    }
-    loki.source.kubernetes "pods" {
-      targets = discovery.kubernetes.pods.targets
-      forward_to = [loki.write.loki.receiver]
-    }
-    loki.write "loki" {
+    loki.write "remote" {
       endpoint {
-        // Loki also runs on the monitoring host now (see the Mimir note above).
         url = "http://{{ monitoring_host }}:{{ monitoring_loki_port }}/loki/api/v1/push"
       }
     }
 
-    otelcol.receiver.otlp "in" {
-      grpc {
-        endpoint = "0.0.0.0:4317"
-      }
-      http {
-        endpoint = "0.0.0.0:4318"
-      }
-      output {
-        metrics = [otelcol.exporter.prometheus.beyla.input]
-        logs = []
-        traces = [otelcol.processor.batch.out.input]
+    {% for name in tt_mongodb_exporters.keys() %}
+    prometheus.exporter.mongodb "{{ name | replace('-', '_') }}" {
+      mongodb_uri = sys.env("MONGO_{{ loop.index }}")
+    }
+    discovery.relabel "mongo_{{ loop.index }}" {
+      targets = prometheus.exporter.mongodb.{{ name | replace('-', '_') }}.targets
+      rule {
+        target_label = "instance"
+        replacement = "{{ name }}"
       }
     }
-    otelcol.processor.batch "out" {
-      output {
-        metrics = []
-        logs = []
-        traces = [otelcol.exporter.otlp.tempo.input]
+    prometheus.scrape "mongo_{{ loop.index }}" {
+      targets = discovery.relabel.mongo_{{ loop.index }}.output
+      scrape_interval = "15s"
+      job_name = "lab-mongodb"
+      forward_to = [prometheus.remote_write.mimir.receiver]
+    }
+    {% endfor %}
+    {% for name in tt_mysql_exporters.keys() %}
+    prometheus.exporter.mysql "{{ name | replace('-', '_') }}" {
+      data_source_name = sys.env("MYSQL_{{ loop.index }}")
+    }
+    discovery.relabel "mysql_{{ loop.index }}" {
+      targets = prometheus.exporter.mysql.{{ name | replace('-', '_') }}.targets
+      rule {
+        target_label = "instance"
+        replacement = "{{ name }}"
       }
     }
-    otelcol.exporter.otlp "tempo" {
-      client {
-        endpoint = "{{ monitoring_host }}:4317"
-        tls {
-          insecure = true
-          insecure_skip_verify = true
-        }
-      }
+    prometheus.scrape "mysql_{{ loop.index }}" {
+      targets = discovery.relabel.mysql_{{ loop.index }}.output
+      scrape_interval = "15s"
+      job_name = "lab-mysql"
+      forward_to = [prometheus.remote_write.mimir.receiver]
     }
+    {% endfor %}
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -168,6 +159,7 @@ metadata:
     app: alloy
 spec:
   replicas: 1
+  strategy: {type: Recreate}
   selector:
     matchLabels:
       app: alloy
@@ -177,6 +169,10 @@ spec:
         app: alloy
     spec:
       serviceAccountName: alloy
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
       # Pin Alloy to a control-plane node. Nothing constrained it before, so the
       # scheduler put it on a benchmark worker (worker1, later worker2), where it
       # competed with the load-test pods for CPU/memory. Pod IPs (10.233.0.0/16)
@@ -186,6 +182,8 @@ spec:
       containers:
       - name: alloy
         image: {{ alloy_image }}
+        envFrom:
+          - secretRef: {name: alloy-db-monitoring}
         args:
           - run
           - --server.http.listen-addr=0.0.0.0:12345
@@ -193,13 +191,8 @@ spec:
           - /etc/alloy/config.alloy
         ports:
         - {containerPort: 12345, name: http}
-        - {containerPort: 4317, name: otlp-grpc}
-        - {containerPort: 4318, name: otlp-http}
         volumeMounts:
         - {name: conf, mountPath: /etc/alloy}
-        - {name: proc, mountPath: /host/proc, readOnly: true}
-        - {name: sys, mountPath: /host/sys, readOnly: true}
-        - {name: host-root, mountPath: /host, readOnly: true}
         # Persist the WAL / positions file. Without this the pod's
         # /var/lib/alloy/data lives in the container filesystem, so EVERY Alloy
         # restart replays every pod's log from the beginning (2026-11-19: a
@@ -217,15 +210,6 @@ spec:
       - name: conf
         configMap:
           name: alloy-conf
-      - name: proc
-        hostPath:
-          path: /proc
-      - name: sys
-        hostPath:
-          path: /sys
-      - name: host-root
-        hostPath:
-          path: /
       # Alloy's own state (WAL + positions). Small and node-local: Alloy is a
       # Deployment, so if it moves nodes the positions file goes with it and the
       # new pod replays from the beginning — acceptable, but the common case
@@ -256,8 +240,4 @@ spec:
     app: alloy
   ports:
   - {name: http, port: 12345, targetPort: 12345}
-  # OTLP ingestion (all traffic opts) — Beyla exports here; kube-proxy only
-  # NATs listed service ports, so OTLP must be declared on the Service even
-  # though the Alloy container already listens on 0.0.0.0:4317/4318.
-  - {name: otlp-grpc, port: 4317, targetPort: 4317}
-  - {name: otlp-http, port: 4318, targetPort: 4318}
+

@@ -14,7 +14,8 @@ set -Eeuo pipefail
 LAB_DIR="lab-setup"
 KUBESPRAY_DIR="kubespray"
 
-KS_DIR_ABS="$(cd "$KUBESPRAY_DIR" && pwd)"
+cd "$(dirname "$0")"
+KS_DIR_ABS="$PWD/$KUBESPRAY_DIR"
 KS_VENV="${KS_DIR_ABS}/.venv"
 KS_REQUIREMENTS="${KS_DIR_ABS}/requirements.txt"
 # kubespray/requirements.txt pins ansible==12.3.0, which needs Python 3.12
@@ -24,7 +25,8 @@ GET_KUBECONFIG="./get-kubeconfig.sh"
 KUBECONFIG_DEST="admin.conf"
 KUBECONFIG_HOST="master1"
 
-ANSIBLE_VAULT_FLAG=${ANSIBLE_VAULT_PASSWORD_FILE:+--vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"}
+ANSIBLE_VAULT_ARGS=()
+if [[ -n "${ANSIBLE_VAULT_PASSWORD_FILE:-}" ]]; then ANSIBLE_VAULT_ARGS=(--vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE"); fi
 
 # ---------- helpers ----------
 ok()   { echo -e "\033[1;32m✔ $*\033[0m"; }
@@ -78,6 +80,7 @@ Usage: $0 [--start-from=STEP] | [STEP]
 
 Steps (in order):
   preparing   - run lab-setup/preparing.yaml
+  monitoring  - deploy monitoring host
   loadgen     - run lab-setup/loadgen.yaml
   kubespray   - deploy cluster with kubespray (venv + cluster.yml)
   postcluster - run lab-setup/postcluster.yaml
@@ -97,13 +100,15 @@ if [[ $# -gt 0 ]]; then
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --start-from=*) START_FROM="${1#*=}" ;;
-    preparing|haproxy|kubespray|postcluster|kubectl|kubeconfig) START_FROM="$1" ;;
+    preparing|monitoring|loadgen|kubespray|postcluster|kubectl|kubeconfig) START_FROM="$1" ;;
     *) err "Unknown argument: $1"; usage; exit 2 ;;
   esac
 fi
 
 START_FROM="$(echo -n "$START_FROM" | tr '[:upper:]' '[:lower:]')"
 
+case "$START_FROM" in ""|preparing|monitoring|loadgen|kubespray|postcluster|kubectl|kubeconfig) ;; *) err "Invalid stage: $START_FROM"; exit 2;; esac
+[[ $# -le 1 ]] || exit 2
 SKIP_UNTIL="${START_FROM:-}"
 should_run() {
   local name="$1"
@@ -118,6 +123,13 @@ should_run() {
 }
 
 # ---------- preflight ----------
+source ./versions.env
+need_cmd git
+[[ "$(git -C "$KUBESPRAY_DIR" rev-parse HEAD)" == "$(git -C "$KUBESPRAY_DIR" rev-parse "${KUBESPRAY_REF}^{commit}")" ]] || { err "Kubespray checkout does not match $KUBESPRAY_REF"; exit 1; }
+need_cmd "$KS_PYTHON"
+"$KS_PYTHON" -m venv .venv-lab
+.venv-lab/bin/python -m pip install "ansible==$LAB_ANSIBLE_VERSION" -r "$LAB_DIR/requirements.txt"
+export PATH="$PWD/.venv-lab/bin:$PATH"
 need_cmd ansible-playbook
 need_cmd python3
 need_cmd bash
@@ -140,9 +152,9 @@ for _f in cluster-topology.yml \
 done
 unset _f _d
 
-export ANSIBLE_SSH_CONTROL_PATH_DIR=/tmp/ansible-cp
-mkdir -p /tmp/ansible-cp
-chmod 700 /tmp/ansible-cp
+export ANSIBLE_SSH_CONTROL_PATH_DIR="$HOME/.ansible/cp-lab"
+mkdir -p "$ANSIBLE_SSH_CONTROL_PATH_DIR"
+chmod 700 "$ANSIBLE_SSH_CONTROL_PATH_DIR"
 
 step_banner "Rendering cluster-topology.yml from .env"
 ansible-playbook -i localhost, -c local tools/render-topology.yml
@@ -155,7 +167,7 @@ ok "Generated dynamic IP variables"
 # ---------- collections / deps (lab-setup) ----------
 if [[ -f "${LAB_DIR}/collections/requirements.yml" ]]; then
   step_banner "Ensuring Ansible collections are installed (lab-setup)"
-  export ANSIBLE_COLLECTIONS_PATHS="$(pwd)/.ansible/collections:${ANSIBLE_COLLECTIONS_PATHS:-$HOME/.ansible/collections:/usr/share/ansible/collections}"
+  export ANSIBLE_COLLECTIONS_PATH="$(pwd)/.ansible/collections:${ANSIBLE_COLLECTIONS_PATH:-$HOME/.ansible/collections:/usr/share/ansible/collections}"
   mkdir -p "$(pwd)/.ansible/collections"
 
   info "ansible-galaxy collection install -r ${LAB_DIR}/collections/requirements.yml"
@@ -167,7 +179,7 @@ fi
 
 if [[ -f "${LAB_DIR}/requirements.txt" ]]; then
   step_banner "Ensuring Python deps are installed (lab-setup)"
-  python3 -m pip install --user -r "${LAB_DIR}/requirements.txt" >/dev/null
+  python -m pip install -r "${LAB_DIR}/requirements.txt" >/dev/null
   ok "Python deps installed"
 fi
 
@@ -176,11 +188,15 @@ if should_run preparing; then
   step_banner "Running preparing playbook (lab-setup)"
   pushd "$LAB_DIR" >/dev/null
   info "ansible-playbook -i inventory/host.yaml playbook/preparing.yaml -b"
-  ansible-playbook -i inventory/host.yaml playbook/preparing.yaml -b ${ANSIBLE_VAULT_FLAG:-}
+  ansible-playbook -i inventory/host.yaml playbook/preparing.yaml -b "${ANSIBLE_VAULT_ARGS[@]}"
   ok "Preparing playbook finished"
   popd >/dev/null
 else
   info "Skipping step: preparing"
+fi
+
+if should_run monitoring; then
+  (cd "$LAB_DIR" && ansible-playbook -i inventory/host.yaml playbook/monitoring.yaml -b "${ANSIBLE_VAULT_ARGS[@]}")
 fi
 
 # ---------- 2) Load Generator play ----------
@@ -188,7 +204,7 @@ if should_run loadgen; then
   step_banner "Running Load Generator playbook (lab-setup)"
   pushd "$LAB_DIR" >/dev/null
   info "ansible-playbook -i inventory/host.yaml playbook/loadgen.yaml -b"
-  ansible-playbook -i inventory/host.yaml playbook/loadgen.yaml -b ${ANSIBLE_VAULT_FLAG:-}
+  ansible-playbook -i inventory/host.yaml playbook/loadgen.yaml -b "${ANSIBLE_VAULT_ARGS[@]}"
   ok "Load Generator playbook finished"
   popd >/dev/null
 else
@@ -224,11 +240,10 @@ if should_run kubespray; then
 
   source "$KS_VENV/bin/activate"
   info "Ensuring Kubespray requirements are installed"
-  pip install --upgrade pip >/dev/null
   pip install -r "$KS_REQUIREMENTS" >/dev/null
 
   info "ansible-playbook -i ../kubespray-overlay/inventory/lab/inventory.ini cluster.yml -b"
-  ansible-playbook -i ../kubespray-overlay/inventory/lab/inventory.ini cluster.yml -b ${ANSIBLE_VAULT_FLAG:-}
+  ansible-playbook -i ../kubespray-overlay/inventory/lab/inventory.ini cluster.yml -b "${ANSIBLE_VAULT_ARGS[@]}"
   deactivate
   ok "Kubespray cluster deployment finished"
   popd >/dev/null
@@ -241,7 +256,7 @@ if should_run postcluster; then
   step_banner "Running postcluster playbook (lab-setup)"
   pushd "$LAB_DIR" >/dev/null
   info "ansible-playbook -i inventory/host.yaml playbook/postcluster.yaml -b"
-  ansible-playbook -i inventory/host.yaml playbook/postcluster.yaml -b ${ANSIBLE_VAULT_FLAG:-}
+  ansible-playbook -i inventory/host.yaml playbook/postcluster.yaml -b "${ANSIBLE_VAULT_ARGS[@]}"
   ok "Postcluster playbook finished"
   popd >/dev/null
 else
@@ -271,3 +286,4 @@ else
 fi
 
 echo -e "\n\033[1;32mAll selected steps completed successfully!\033[0m"
+

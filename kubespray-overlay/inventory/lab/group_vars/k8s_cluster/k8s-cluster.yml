@@ -61,7 +61,7 @@ kube_proxy_nodeport_addresses: >-
   {%- endif -%}
 
 
-kube_encrypt_secret_data: false
+kube_encrypt_secret_data: true
 
 
 cluster_name: cluster.local
@@ -92,7 +92,7 @@ kubeadm_certificate_key: "{{ lookup('password', credentials_dir + '/kubeadm_cert
 
 k8s_image_pull_policy: IfNotPresent
 
-kubernetes_audit: false
+kubernetes_audit: true
 
 default_kubelet_config_dir: "{{ kube_config_dir }}/dynamic_kubelet_dir"
 
@@ -104,15 +104,15 @@ kubeconfig_localhost: true
 kube_reserved: true
 kube_reserved_cgroups_for_service_slice: kube.slice
 kube_reserved_cgroups: "/{{ kube_reserved_cgroups_for_service_slice }}"
-kube_memory_reserved: 256Mi
-kube_cpu_reserved: 100m
+kube_memory_reserved: 1536Mi
+kube_cpu_reserved: 1000m
 kube_ephemeral_storage_reserved: 2Gi
 kube_pid_reserved: "1000"
 
 system_reserved: true
 system_reserved_cgroups_for_service_slice: system.slice
 system_reserved_cgroups: "/{{ system_reserved_cgroups_for_service_slice }}"
-system_memory_reserved: 512Mi
+system_memory_reserved: 1Gi
 system_cpu_reserved: 500m
 system_ephemeral_storage_reserved: 2Gi
 
@@ -136,3 +136,28 @@ kubeadm_patches_dir: "{{ kube_config_dir }}/patches"
 kubeadm_patches: []
 
 remove_anonymous_access: false
+
+kubelet_rotate_server_certificates: true
+
+# Authenticated control-plane metrics reachable by the in-cluster collector.
+# These two values are part of the kubeadm ClusterConfiguration, which is SHARED
+# by every control-plane node, so they must not be a per-host address (a
+# per-host `{{ ip }}` bakes master1's IP into master2/3 and the static pods
+# crash with "bind: cannot assign requested address"). Bind to localhost and
+# scrape 127.0.0.1:10257/10259 from the node Alloy collector instead.
+kube_controller_manager_bind_address: "127.0.0.1"
+kube_scheduler_bind_address: "127.0.0.1"
+
+# kubelet-serving CSR approval. The kubelet CSR's DNS SAN is the bare node name
+# (master1/worker1, ...), which is not resolvable from the cluster, so the chart's
+# default DNS-resolution check denies every CSR and cAdvisor HTTPS never gets a
+# cluster-CA-signed serving cert. Approve only CSRs that (a) come from the lab
+# private subnet and (b) carry a lab node-name DNS SAN. This is a restricted,
+# verified process, not a blanket approve.
+kubelet_csr_approver_values:
+  bypassDnsResolution: true
+  bypassHostnameCheck: true
+  providerRegex: "^(master|worker)[0-9]+$"
+  providerIpPrefixes:
+    - "10.10.1.0/24"
+

@@ -1,62 +1,12 @@
-# Files intentionally absent from the merged source
+Delete these paths from the previous source tree (only tracked project files; preserve local secrets, runtime state and untracked configuration):
+docs/MIGRATION.md
+lab-setup/playbook/migrate-legacy.yaml
+lab-setup/roles/cluster_addons/files/setup_kubelet_reservations.sh
+lab-setup/roles/cluster_addons/tasks/autoscaler_placement.yaml
+lab-setup/roles/cluster_addons/tasks/cert_issuer.yaml
+lab-setup/roles/cluster_addons/tasks/cert_manager.yaml
+lab-setup/roles/cluster_addons/tasks/grafana_datasources.yaml
+lab-setup/roles/cluster_addons/tasks/kubelet_reservations.yaml
+lab-setup/roles/cluster_addons/templates/__pycache__/inject_selectors.cpython-310.pyc
+lab-setup/roles/cluster_addons/templates/restore_upstream.py
 
-Review before deleting anything from an existing checkout. No cluster object is
-deleted merely by removing a file.
-
-## Retired add-on tasks
-
-```
-lab-setup/roles/cluster_addons/tasks/cert_manager.yaml        # restored: cert-manager is still used for the ACME solver
-lab-setup/roles/cluster_addons/tasks/cert_issuer.yaml         # restored: ACME ClusterIssuer (gatewayHTTPRoute solver)
-lab-setup/roles/cluster_addons/tasks/grafana_datasources.yaml # now a no-op: Grafana is off-cluster, provisioned by roles/monitoring
-lab-setup/roles/cluster_addons/tasks/ingress_gateway.yaml     # replaced by gateway.yaml (MetalLB + Envoy Gateway)
-lab-setup/roles/cluster_addons/tasks/istio.yaml               # mesh retired
-lab-setup/roles/cluster_addons/tasks/kubelet_reservations.yaml# RESTORED: still required for allocatable headroom
-lab-setup/roles/cluster_addons/tasks/loki.yaml                # in-cluster Loki retired
-lab-setup/roles/cluster_addons/tasks/mimir.yaml               # in-cluster Mimir retired
-lab-setup/roles/cluster_addons/tasks/tempo.yaml               # in-cluster Tempo + Istio Telemetry retired
-lab-setup/roles/cluster_addons/tasks/monitoring_disk.yaml     # in-cluster monitoring disk retired
-```
-
-## Retired templates
-
-```
-lab-setup/roles/cluster_addons/templates/k6-dashboard.json.j2      # replaced by the provisioned lab-k6 dashboard
-lab-setup/roles/cluster_addons/templates/local-path-config-patch.json.j2
-lab-setup/roles/cluster_addons/templates/loki.yaml.j2
-lab-setup/roles/cluster_addons/templates/mimir.yaml.j2
-lab-setup/roles/cluster_addons/templates/tempo.yaml.j2
-lab-setup/roles/cluster_addons/templates/tempo-mesh.yaml.j2         # Istio Telemetry sampler
-lab-setup/roles/cluster_addons/templates/ts-avatar-service.yaml.j2  # not in upstream 0.0.4
-```
-
-## Retired role
-
-`lab-setup/roles/preparing_server/` (17 files) — a broad sysctl / SSH / firewall
-overwrite role that `preparing.yaml` never imported. OS preparation is now four
-explicit tasks (packages, chrony, sync wait). Review any sysctls, limits and
-firewall rules it applied on a live host separately; do not reset them blindly.
-
-## Secrets
-
-```
-lab-setup/inventory/group_vars/all/vault.yaml
-lab-setup/.vault.pass
-kubespray-overlay/inventory/lab/credentials/kubeadm_certificate_key.creds
-```
-
-These must never be in git. Rotate anything the old archive exposed.
-
-## Vendored collections
-
-`lab-setup/collections/ansible_collections/` — removed; the pinned
-`lab-setup/collections/requirements.yml` (kubernetes.core 6.1.0, ansible.posix
-2.1.0) is installed instead.
-
-## Restored, despite being listed as removed upstream
-
-`lab-setup/roles/cluster_addons/tasks/kubelet_reservations.yaml` and
-`cert_manager.yaml` / `cert_issuer.yaml` — the first is required for allocatable
-headroom (removing it starves the control plane), the other two still own the
-ACME solver for the public Grafana host. Deleting them would break a working
-cluster, so they stay.

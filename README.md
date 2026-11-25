@@ -1,61 +1,36 @@
-# Kubernetes experimental lab
+# CloudLab experimental Kubernetes platform
 
-A single observability stack for a fixed eight-node CloudLab lab: three dedicated
-control planes, three workers, one k6 generator and one external monitoring node.
-Kubespray manages Kubernetes; Ansible manages the application and telemetry.
-Gateway API + Envoy Gateway + MetalLB expose an application-only private VIP,
-without NodePorts or an external API-server load balancer. Internal Kubespray
-HAProxy remains. There is no Istio installation and no alternative monitoring
-profile.
+Clean-install revision of the final supplied cluster source (cc3bb8c462113e57c372f12d9c789616f9b27fe1). Target: three dedicated control-plane nodes, three benchmark workers, dedicated k6 and monitoring machines. No service mesh, Ingress NGINX, alternate monitoring profiles, application NodePort, or external API-server load balancer. Kubernetes Gateway API + Envoy Gateway + MetalLB uses a private application VIP. Kubespray's internal localhost HAProxy is retained.
 
-## Before deployment
+This is an **offline-validated deployment candidate**. The new CloudLab allocation must be used to complete the acceptance work in `docs/VALIDATION.md`. Do not disable checks just to get a green deployment.
 
-1. Read [MIGRATION.md](docs/MIGRATION.md), [TELEMETRY.md](docs/TELEMETRY.md)
-   and [VALIDATION.md](docs/VALIDATION.md). This is a statically checked
-   candidate, not a live-tested release. **Do not re-bootstrap a working cluster**
-   to update monitoring.
-2. Copy `.env.example` to `.env`, fill the eight CloudLab hostnames/IPs and
-   reserve a free private L2 `GATEWAY_PRIVATE_IP` (default suggestion
-   `10.10.1.50`). Check `versions.env`, `lab-setup/inventory/group_vars/all/postcluster.yaml`
-   and the monitoring/loadgen defaults against the live versions.
-3. Ensure SSH aliases and verified known-host entries exist for all eight nodes.
-   Set `GRAFANA_ADMIN_PASSWORD` (≥12 chars) for the monitoring role; rotate the
-   old Grafana admin separately. Never commit a password or kubeconfig.
-4. Supply `k6_sha256` — the official SHA256 of the pinned k6 archive. The role
-   refuses to install without it.
-5. Set `monitoring_disk_device` to a verified `/dev/disk/by-id/...` **only** if
-   `/var/lib/monitoring` is not already a mountpoint. Formatting is opt-in and
-   rejects existing signatures and non-empty mount directories.
+## Prepare the runner and private network
 
-## Use
+1. Review `versions.env`, the Kubespray overlay, `lab-setup/inventory/group_vars/all/postcluster.yaml`, and `lab-setup/roles/monitoring/defaults/main.yml`. Verify actual availability of every pinned image/chart and pinned upstream Train Ticket release. Capture image digests and exact Git SHAs. Use Python 3.12 on the runner. Use the existing `runner-init` playbook if needed; install SSH keys yourself and verify host fingerprints using CloudLab before enrollment. Never blindly accept a new key.
+2. Clone Kubespray at the exact `KUBESPRAY_REF` from `versions.env` into `kubespray/` (ignored). Copy `.env.example` to `.env`, fill in new CloudLab hostnames and private IPs, and reserve an unused VIP on the shared private L2 network. Verify the SSH aliases and IPs independently on all eight hosts. `.env` contains topology only. Never source untrusted .env files.
+3. Inspect `lsblk -f`, `lsblk -o NAME,TYPE,SIZE,MOUNTPOINTS,MODEL,SERIAL`, and `wipefs -n` on **mon1**. Export `MONITORING_DISK_DEVICE=/dev/disk/by-id/<verified-unused-device>`; do not guess a device. Set `MONITORING_ALLOW_FORMAT=true` only for a verified empty non-system disk authorized for formatting; otherwise leave false. Use a dedicated disk, not root or a shared NFS volume. Verify capacity for configured retention.
+4. Export `GRAFANA_ADMIN_PASSWORD` (at least 16 URL-safe characters, not committed), `K6_SHA256` (official SHA-256 of the pinned Linux amd64 k6 archive), and `LAB_EXCLUSIVE_WRITER_CONFIRMED=true` only after verifying no other autoscalers are active. Keep secrets out of terminal history and evidence. Use encrypted `lab-setup/inventory/group_vars/all/zz-local.yaml` for secret database DSNs, probe overrides, and site-specific configuration; this file is ignored. Use Ansible Vault password file via `ANSIBLE_VAULT_PASSWORD_FILE` if needed. 
+5. **Before Train Ticket installation:** fetch the exact `tt_repo_version` (currently 0.0.4), inspect its manifests and images, validate image compatibility, and fill `tt_probe_overrides` keyed `deployment/container` for containers lacking a verified upstream probe. The renderer fails closed on missing probes by default. Do not substitute `/` + accepted 404 or blindly disable the check. Set read-only database exporter DSNs in the local encrypted vars. Create monitoring DB accounts after DB initialization, before the `alloy` stage. No application resource or JVM overrides. If upstream mounts data via something other than PVC, inspect and implement a safe conversion in the renderer. Review the custom frontend config against the exact release.
 
-- **Grafana:** `http://10.10.1.2:3000` (folder *Research Lab*, 7 dashboards,
-  59 panels). Mimir/Loki/Tempo/Pyroscope are provisioned datasources.
-- **Application:** `http://10.10.1.50/` over the experiment LAN (Envoy Gateway,
-  no NodePort).
-- **Load test:** from the loadgen, `source /opt/loadgen/k6.env; k6 run -o experimental-prometheus-rw /opt/loadgen/smoke.js`. That is a gateway smoke test, not the TrainTicket saga workload; supply `load_testing_src` to copy the research assets.
-- **Native CPU HPA baseline:** `cd lab-setup && ansible-playbook playbook/native-hpa.yaml -b`, only after stopping every other controller. It fails if upstream CPU requests are missing; do not invent requests to force it.
-- **Offline check:** `python3 tests/static_validate.py`
-- **Live checks:** `python3 tests/check_live_metrics.py --mimir http://10.10.1.2:18080`
+## Installation
 
-## Layout
+`./run-cluster-setup.sh --help` lists supported stages. The normal order is prepare, external monitoring, load generator, Kubespray, postcluster, kubectl, operator kubeconfig. For a new deployment, use these commands as an example of **staged installation**, not a blind all-in-one operation:
 
-```
-docs/                 MIGRATION / TELEMETRY / VALIDATION / OFFLINE_VALIDATION / REMOVED_FILES
-kubespray-overlay/    kubeadm/Kubespray inventory and host settings
-lab-setup/            Ansible roles, inventory, playbooks
-runner-init/          CloudLab runner bootstrap
-tests/                offline + live acceptance checks
-tools/                topology rendering and cluster IP generation
-versions.env          pinned Kubespray ref and Ansible version
-run-cluster-setup.sh  fresh-cluster wrapper (NOT for a live cluster)
+```bash
+./run-cluster-setup.sh --start-from=preparing
+# If postcluster stops at a required verification gate, correct source/local vars first.
+# Resume a specific role after Kubespray is installed:
+cd lab-setup
+../.venv-lab/bin/ansible-playbook -i inventory/host.yaml playbook/postcluster.yaml -b --tags deps,control-plane,monitoring,resource-quota,train-ticket
+# Initialize verified DB exporter users and credentials, then apply remaining roles.
+../.venv-lab/bin/ansible-playbook -i inventory/host.yaml playbook/postcluster.yaml -b --tags deps,gateway,alloy,beyla,autoscaler-rbac
 ```
 
-Generated files, credentials and vendored collections are deliberately omitted.
+The initial all-in-one command may intentionally stop at a readiness, TLS, credentials, or validation gate. For controlled provisioning, use individual playbooks/tags and resume only after correcting the cause. Never re-run Kubespray or wipe a disk solely to fix an add-on. The wrapper enforces pinned Kubespray, prepares a local virtual environment and renders topology. The current repo uses alias-based SSH for remote access. Direct operator kubeconfig access or the SSH tunnel is administrative only, not an external API LB and not an autoscaler identity.
 
-## Fresh install vs migration
+## Monitoring
 
-`run-cluster-setup.sh` is for a **clean** lab only. For an existing cluster use
-the sequence in `docs/MIGRATION.md` — monitoring first, then the explicit
-`migrate-legacy` play, then `postcluster`. The wrapper pins Kubespray and creates
-isolated virtualenvs; it must not be re-run against a running cluster.
+Mimir, Loki, Tempo, Grafana, Pyroscope and the external Alloy gateway run on mon1. A node Alloy DaemonSet covers six Kubernetes nodes and tails local logs; a worker profiling DaemonSet collects CPU profiles. One in-cluster Alloy Deployment owns cluster metric discovery and Kubernetes events, plus read-only DB exporters. Beyla exports RED, dependency, process, runtime and TCP data to the external gateway every five seconds. Node Exporter on each external machine supplies host metrics. The Mimir rule contract is in `docs/TELEMETRY.md`. Grafana has 11 provisioned dashboards. Use SSH port forwarding to private Grafana/metrics endpoints if the runner cannot reach the LAN.
+
+The acceptance workflow is `python3 tests/static_validate.py`, `python3 tests/test_live_validator.py`, then the component-specific validations and active workload check in `docs/VALIDATION.md`. The provided smoke.js is a telemetry connectivity test, **not** a scientific Train Ticket workload. Keep research load scripts separate and pin their revision; set `load_testing_src` explicitly if they are to be copied. No native HPA is installed automatically. `playbook/native-hpa.yaml` is a separate baseline and rejects missing CPU requests. The `autoscaling-research/replica-controller` ServiceAccount is intended for the research controller, not a running autoscaler. Only one replica writer per experiment.
+

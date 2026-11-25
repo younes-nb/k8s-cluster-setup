@@ -1,23 +1,4 @@
 ---
-# Namespace ResourceQuota for TrainTicket.
-#
-# This existed only as a live `kubectl apply` (2026-11-16) and was in no repo, so
-# a fresh cluster got no namespace ceiling at all. It is declarative now.
-#
-# What it is for: a runaway guard so the namespace cannot consume the whole
-# cluster. It is NOT a performance knob -- the real control-plane protection is
-# the kubelet reservation (kubelet_reservations.yaml), which the kubelet enforces
-# regardless of scheduling.
-#
-# Deliberately NO limits.cpu / limits.memory caps. A limits cap is a trap: the
-# namespace reaches it long before it runs out of nodes, every new pod is then
-# refused with FailedCreate, deployments drop to zero replicas, and the gateway
-# answers 503 no-healthy-upstream. That is exactly what happened on 2026-11-17
-# (limits.cpu 60 reached at ~46 pods -> 20/43 deployments with no pods).
-#
-# Values are sized for the clemson cluster (6 nodes x 40 C / 251 Gi). Override
-# per cluster in inventory/group_vars/all/postcluster.yaml.
-
 - name: Ensure the TrainTicket namespace exists
   kubernetes.core.k8s:
     state: present
@@ -40,8 +21,6 @@
         namespace: "{{ tt_ns }}"
       spec:
         hard:
-          requests.cpu: "{{ tq_requests_cpu }}"
-          requests.memory: "{{ tq_requests_memory }}"
           pods: "{{ tq_pods }}"
           count/deployments.apps: "{{ tq_count_deployments }}"
           count/replicasets.apps: "{{ tq_count_replicasets }}"
@@ -60,3 +39,4 @@
     msg: >-
       train-ticket-quota hard={{ _tq.resources[0].spec.hard | default({}) }}
       used={{ _tq.resources[0].status.used | default({}) }}
+

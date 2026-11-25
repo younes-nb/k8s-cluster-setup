@@ -1,6 +1,6 @@
 {
   "uid": "lab-logs",
-  "title": "07 | Benchmark errors and Kubernetes events",
+  "title": "11 \u2014 Application logs and events",
   "description": "Loki log views. Missing labels mean the collector has not seen them yet.",
   "tags": [
     "research",
@@ -141,6 +141,48 @@
         "wrapLogMessage": true,
         "sortOrder": "Descending"
       }
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Kubernetes lifecycle events",
+      "description": "Verify actual event stream labels in Loki; no fabricated error categories.",
+      "datasource": {
+        "type": "loki",
+        "uid": "lab-loki"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"loki.source.kubernetes_events.events\"}",
+          "legendFormat": "",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      }
     }
   ],
   "links": [
@@ -156,3 +198,4 @@
     }
   ]
 }
+

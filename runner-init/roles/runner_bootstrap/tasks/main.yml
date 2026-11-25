@@ -220,30 +220,12 @@
     {{ kubespray_dest }}/inventory/lab/
   become: false
 
-- name: Add cluster FQDNs to known_hosts (best-effort)
-  ansible.builtin.shell: |
-    set -e
-    for h in {{ cloudlab_hosts.values() | list | join(' ') }}; do
-      ssh-keyscan -H "$h" 2>/dev/null || true
-    done
-  args:
-    executable: /bin/bash
-  register: keyscan
+- name: Require already verified CloudLab host keys on the runner
+  ansible.builtin.command:
+    argv: [ssh-keygen, -F, "{{ item }}", -f, "{{ runner_home }}/.ssh/known_hosts"]
+  loop: "{{ cloudlab_hosts.values() | list }}"
   changed_when: false
   become: false
-
-- name: Write scanned keys into known_hosts (best-effort)
-  ansible.builtin.lineinfile:
-    path: "{{ runner_home }}/.ssh/known_hosts"
-    create: true
-    owner: "{{ runner_user }}"
-    group: "{{ runner_user_group }}"
-    mode: "0644"
-    line: "{{ item }}"
-    state: present
-  loop: "{{ keyscan.stdout_lines | default([]) }}"
-  when: (keyscan.stdout | default('')) | length > 0
-
 - name: Done message
   ansible.builtin.debug:
     msg:
@@ -252,3 +234,4 @@
       - "Kubespray: {{ kubespray_dest }}"
       - "Overlay applied from: {{ kubespray_overlay_dir }}/inventory/lab -> {{ kubespray_dest }}/inventory/lab"
       - "SSH aliases installed in {{ runner_home }}/.ssh/config"
+

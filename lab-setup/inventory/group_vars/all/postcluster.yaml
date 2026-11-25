@@ -1,128 +1,58 @@
 kubeconfig_path: /etc/kubernetes/admin.conf
-# ---- Gateway API + Envoy Gateway + MetalLB (replaces Istio ingress) -------
-# The classic istio-ingressgateway and the retired in-namespace Gateway API
-# proxy are gone. Traffic enters through Envoy Gateway, which fronts TrainTicket,
-# the public Grafana host and the ACME solver. There are NO NodePorts on the
-# application path: MetalLB advertises a private VIP on the lab L2 segment.
-gateway_api_crds_url: "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml"
-envoy_gateway_version: "v1.6.2"
+gateway_api_crds_url: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml
+envoy_gateway_version: v1.6.2
 gateway_replicas: 3
-gateway_namespace: "envoy-gateway-system"
-gateway_private_ip: "10.10.1.50"
-gateway_nodeport_status: null
-metallb_version: "v0.15.2"
-metallb_namespace: "metallb-system"
-metallb_address_pool: "10.10.1.50/32"
-ingress_class: "envoy"
-storage_class: "local-path"
-
-# ---- monitoring placement (2026-11-17) -----------------------------------
-# Loki and Mimir run on the control-plane nodes, NOT on workers: a worker is
-# also a benchmark target, so a monitoring pod there competes with the workload
-# under test. The masters carry a spare second disk mounted at
-# /var/lib/monitoring (see roles/cluster_addons/tasks/monitoring_disk.yaml), so
-# monitoring I/O never shares a spindle with etcd.
-# Control-plane nodes. Derived from the inventory's `master*` hosts so a new
-# cluster with different names needs no change here; override explicitly if your
-# control plane is not called master*.
-control_plane_nodes: >-
-  {{ groups['nodes'] | default([]) | select('search', '^master') | list
-     or ['master1', 'master2', 'master3'] }}
-
-# Taint the masters so only control-plane/monitoring pods run there.
-# FALSE by default: at this cluster size the namespace needs more CPU than the
-# workers alone provide, so tainting left ~12 pods permanently unschedulable.
-# Protection comes from kubelet reservations instead (see below). Set to true
-# only on a cluster whose workers can host the whole namespace.
-control_plane_taint: false
-
-# Only used by the (retired) in-cluster monitoring disk task; kept so a
-# re-enable is a one-line change.
-monitoring_nodes: "{{ control_plane_nodes }}"
-
-# ---- kubelet reservations (control-plane + system headroom) --------------
-# allocatable = capacity - kubeReserved - systemReserved - evictionHard.
-# 2026-11-17: without these the masters had allocatable == capacity and ~12
-# TrainTicket pods (1 Gi each) starved kubelet and the apiserver until master1
-# went NotReady. The kubelet reads /etc/kubernetes/kubelet-config.yaml.
-kubelet_config_path: "/etc/kubernetes/kubelet-config.yaml"
-kubelet_kube_reserved_cpu: "1"
-kubelet_kube_reserved_memory: "1536Mi"
-kubelet_system_reserved_cpu: "500m"
-kubelet_system_reserved_memory: "1Gi"
-kubelet_eviction_hard_memory: "500Mi"
-
-# ACME is used only for the public Grafana host; the private LAN cannot
-# complete an HTTP-01 challenge, so the certificate stays pending (known).
-cert_issuer_name: "letsencrypt-http01"
-acme_server_url: "https://acme-v02.api.letsencrypt.org/directory"
-acme_email: "younesnikbin@gmail.com"
-acme_private_key_secret: "le-account-key"
-
-monitoring_ns: "monitoring"
-prom_release_label: "prometheus-stack"
-prom_repo_name: "prometheus-community"
-prom_repo_url: "https://prometheus-community.github.io/helm-charts"
-prom_stack_version: "79.8.2"
-
-alloy_image: "docker.io/grafana/alloy:v1.20.0"
-alloy_scrape_interval: "5s"
-
-beyla_image: "docker.io/grafana/beyla:3.37.0"
-
-tt_ns: "train-ticket"
-tt_repo_url: "https://github.com/FudanSELab/train-ticket.git"
-tt_repo_version: "0.0.4"
-tt_clone_dir: "/tmp/train-ticket"
+gateway_namespace: envoy-gateway-system
+metallb_version: v0.15.2
+metallb_namespace: metallb-system
+metallb_address_pool: '{{ gateway_private_ip }}/32'
+storage_class: local-path
+control_plane_nodes: "{{ groups['nodes'] | default([]) | select('search', '^master')\
+  \ | list\n   or ['master1', 'master2', 'master3'] }}"
+control_plane_taint: true
+monitoring_ns: monitoring
+prom_release_label: prometheus-stack
+prom_repo_name: prometheus-community
+prom_repo_url: https://prometheus-community.github.io/helm-charts
+prom_stack_version: 79.8.2
+alloy_image: docker.io/grafana/alloy:v1.20.0
+alloy_scrape_interval: 5s
+beyla_image: docker.io/grafana/beyla:3.37.0
+tt_ns: train-ticket
+tt_repo_url: https://github.com/FudanSELab/train-ticket.git
+tt_repo_version: 0.0.4
+tt_clone_dir: /tmp/train-ticket
 tt_min_replicas: 1
-# Raised 8 -> 10 (2026-11-21): the per-deployment replica ceiling, not node
-# capacity, was the binding constraint at high load.
 tt_max_replicas: 10
 tt_cpu_avg_utilization: 80
 tt_wait_retries: 180
 tt_wait_delay: 5
-tt_mongo_image: "mongo:4.4"
-tt_mysql_image: "mysql:8.0"
-tt_app_req_cpu: "500m"
-tt_app_req_mem: "512Mi"
-tt_app_lim_cpu: "2"
-tt_app_lim_mem: "1Gi"
-tt_db_lim_cpu: "1"
-tt_db_lim_mem: "512Mi"
-tt_java_tool_options: "-Xmx512m"
-tt_db_pvc_size: "2Gi"
-tt_mongo_data_path: "/data/db"
-tt_mysql_data_path: "/var/lib/mysql"
-
-# ---- Monitoring is OUTSIDE the cluster (2026-11-18) ----------------------
-# Mimir / Loki / Tempo / Grafana run on the `monitoring` host (see
-# inventory/host.yaml: today the same machine as the loadgen, private
-# address 10.10.1.1). Alloy stays in the cluster -- pod IPs are not routable
-# from outside -- and pushes here over the private network. Ports match the old
-# in-cluster Service ports so 127.0.0.1:18080 / :3100 keep working for every
-# script and tunnel helper.
-monitoring_host: "10.10.1.2"
+tt_mongo_image: mongo:4.4
+tt_mysql_image: mysql:8.0
+tt_db_pvc_size: 2Gi
+tt_mongo_data_path: /data/db
+tt_mysql_data_path: /var/lib/mysql
+monitoring_host: '{{ cloudlab_private_ips.monitoring }}'
 monitoring_mimir_port: 18080
 monitoring_loki_port: 3100
 monitoring_tempo_port: 3200
 monitoring_grafana_port: 3000
-
-# Monitoring data lives on the monitoring host, on its own dedicated disk.
-# (Note: /share is a 500 G NFS mount but it is exported READ-ONLY on mon1, and
-# the 57 G root disk would not hold the 60-day retention at ~2 GB/day. mon1 has
-# an unused 931 GB /dev/sdb, so the role formats and mounts that.)
-monitoring_data_dir: "/var/lib/monitoring"
-monitoring_disk_device: "/dev/sdb"
-
-# ---- TrainTicket namespace ResourceQuota --------------------------------
-# Sized for the clemson cluster (6 nodes x 40 C / 251 GiB). Requests only --
-# NO limits caps, because a limits cap blocks HPA scale-out and leaves
-# deployments with zero pods (see tasks/resource_quota.yaml).
-tq_requests_cpu: "200"
-tq_requests_memory: "1300Gi"
-tq_pods: "400"
-tq_count_deployments: "100"
-tq_count_replicasets: "400"
-
-# Only explicit, verified overrides of probe paths/ports should be supplied.
+monitoring_data_dir: /var/lib/monitoring
+monitoring_disk_device: '{{ lookup(''env'', ''MONITORING_DISK_DEVICE'') }}'
+tq_pods: '400'
+tq_count_deployments: '100'
+tq_count_replicasets: '400'
 tt_probe_overrides: {}
+monitoring_allow_format: '{{ lookup(''env'', ''MONITORING_ALLOW_FORMAT'') | default(''false'',
+  true) | bool }}'
+alloy_scrape_timeout: 4s
+beyla_namespaces:
+- train-ticket
+tt_slo_seconds: 0.2
+tt_require_verified_probes: true
+monitoring_tempo_retention: 1440h
+monitoring_profile_retention: 1440h
+tt_mongodb_exporters: {}
+tt_mysql_exporters: {}
+tt_db_monitoring_required: true
+

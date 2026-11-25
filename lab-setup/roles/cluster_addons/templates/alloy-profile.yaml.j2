@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: alloy-profile, namespace: {{ monitoring_ns }}}
+data:
+  config.alloy: |
+    discovery.kubernetes "local" {
+      role = "pod"
+      namespaces {
+        names = {{ beyla_namespaces | to_json }}
+      }
+      selectors {
+        role = "pod"
+        field = "spec.nodeName=" + sys.env("NODE_NAME")
+      }
+    }
+    discovery.relabel "profiles" {
+      targets = discovery.kubernetes.local.targets
+      rule {
+        source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+        separator = "/"
+        target_label = "service_name"
+      }
+    }
+    prometheus.exporter.self "profile" {}
+    prometheus.scrape "self" {
+      targets = prometheus.exporter.self.profile.targets
+      job_name = "alloy-profile"
+      forward_to = [prometheus.remote_write.remote.receiver]
+    }
+    prometheus.remote_write "remote" {
+      endpoint {
+        url = "http://{{ monitoring_host }}:{{ monitoring_mimir_port }}/api/v1/push"
+      }
+    }
+    pyroscope.ebpf "cpu" {
+      targets = discovery.relabel.profiles.output
+      forward_to = [pyroscope.write.remote.receiver]
+    }
+    pyroscope.write "remote" {
+      endpoint {
+        url = "http://{{ monitoring_host }}:4040"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: alloy-profile, namespace: {{ monitoring_ns }}}
+spec:
+  selector: {matchLabels: {app: alloy-profile}}
+  template:
+    metadata: {labels: {app: alloy-profile}}
+    spec:
+      serviceAccountName: alloy-node
+      nodeSelector: {lab.example.com/worker: 'true'}
+      hostPID: true
+      containers:
+        - name: alloy
+          image: {{ alloy_image }}
+          args: [run, '--server.http.listen-addr=0.0.0.0:12345', /etc/alloy/config.alloy]
+          env:
+            - name: NODE_NAME
+              valueFrom: {fieldRef: {fieldPath: spec.nodeName}}
+          securityContext: {privileged: true, runAsUser: 0}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/alloy, readOnly: true}
+            - {name: sys, mountPath: /sys, readOnly: true}
+      volumes:
+        - {name: config, configMap: {name: alloy-profile}}
+        - {name: sys, hostPath: {path: /sys}}
+

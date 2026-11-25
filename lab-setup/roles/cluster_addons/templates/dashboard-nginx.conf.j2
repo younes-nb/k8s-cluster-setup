@@ -336,10 +336,6 @@ http {
       proxy_pass http://ts-admin-user-service:16115;
     }
 
-    location /api/v1/avatar {
-      proxy_pass http://ts-avatar-service:17001;
-    }
-
     location /api/v1/travelservice/ { proxy_pass http://ts-travel-service:12346; }
     location /api/v1/routeservice/ { proxy_pass http://ts-route-service:11178; }
     location /api/v1/priceservice/ { proxy_pass http://ts-price-service:16579; }
@@ -360,4 +356,5 @@ http {
     location /api/v1/orderOtherService/ { proxy_pass http://ts-order-other-service:12032; }
   }
 }
+
 

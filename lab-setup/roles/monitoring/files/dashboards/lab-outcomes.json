@@ -1,0 +1,380 @@
+{
+  "uid": "lab-outcomes",
+  "title": "07 \u2014 SLO and request outcomes",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "tags": [
+    "research-lab"
+  ],
+  "timezone": "utc",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Frontend P90 (server boundary)",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:service_latency:p90_seconds{service_name=\"ts-ui-dashboard\"}",
+          "legendFormat": "frontend",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "PBScaler-compatible frontend violation",
+      "description": "1 = P90 > 200 ms; absent = no valid observation. This is server-observed, not client E2E.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:frontend_slo:violation",
+          "legendFormat": "frontend",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "P90 violation observation fraction (15s samples)",
+      "description": "Percent of valid evaluation instants, not individual request failures.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * avg_over_time(autoscaler:frontend_slo:violation[15m:15s])",
+          "legendFormat": "frontend",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Client failure fraction",
+      "description": "",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:client_failure:ratio",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Client outcomes per second",
+      "description": "Timeout is a subset of failed; the smoke workload tests only HTTP success, not business outcomes.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(experiment)(rate(k6_lab_attempted_total[1m]))",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum by(experiment)(rate(k6_lab_good_total[1m]))",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum by(experiment)(rate(k6_lab_slow_success_total[1m]))",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        },
+        {
+          "refId": "D",
+          "expr": "sum by(experiment)(rate(k6_lab_failed_total[1m]))",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        },
+        {
+          "refId": "E",
+          "expr": "sum by(experiment)(rate(k6_lab_timeout_total[1m]))",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Outstanding accounted client requests",
+      "description": "Counters reflect observed starts and terminal outcomes; interrupted processes and export loss can leave unmatched starts.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:client_outstanding:requests",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Client P90 from native histogram",
+      "description": "Verify exact metric name and unit with k6/Mimir; k6 duration excludes connection setup.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(.90,sum by(experiment)(rate(k6_http_req_duration[1m])))",
+          "legendFormat": "{{experiment}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
+    }
+  ]
+}
+

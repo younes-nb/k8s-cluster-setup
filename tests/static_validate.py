@@ -10,6 +10,7 @@ datasource references), and that the Gateway Service declares no NodePorts.
 It does NOT claim that Helm charts, images or CRDs work: see docs/VALIDATION.md.
 """
 import importlib.util
+import os
 import json
 import pathlib
 import subprocess
@@ -61,12 +62,12 @@ check(not bad, f"{n_yaml} YAML files, shell syntax and Python compilation"
 ctx = {}
 for f in [LAB / "inventory/group_vars/all/postcluster.yaml",
           LAB / "inventory/group_vars/all/all.yaml",
-          LAB / "inventory/group_vars/all/cluster_ips.yml",
           MON / "defaults/main.yml",
           LAB / "roles/loadgen/defaults/main.yml"]:
     d = yaml.safe_load(f.read_text())
     if isinstance(d, dict):
         ctx.update(d)
+ctx.update(cloudlab_private_ips={n: '10.10.1.'+str(i+1) for i,n in enumerate(['loadgen','monitoring','master1','master2','master3','worker1','worker2','worker3'])}, gateway_private_ip='10.10.1.50', monitoring_host='10.10.1.2', monitoring_disk_device='/dev/disk/by-id/test-only', monitoring_allow_format=False)
 ctx.update(groups={"control_plane": ["master1", "master2", "master3"],
                    "workers": ["worker1", "worker2", "worker3"],
                    "nodes": ["master1", "master2", "master3",
@@ -85,7 +86,7 @@ for f in sorted(list(ADDONS.glob("templates/*.yaml.j2"))
     except Exception as exc:
         bad.append(f"{f}: {exc}")
 check(not [b for b in bad if "templates/" in b],
-      f"{len(rendered)} active YAML templates render with the repo group_vars")
+      f"{len(rendered)} active YAML templates render with fixture vars" + (" -> " + "; ".join(bad[:4]) if bad else ""))
 
 # ---- 3. gateway has no NodePort -----------------------------------------
 gw = rendered.get("gateway.yaml.j2", [])
@@ -110,6 +111,8 @@ for f in sorted((MON / "files/dashboards").glob("*.json")):
         ids.add(p["id"]); panels += 1
         if p.get("datasource", {}).get("uid") not in {"lab-mimir", "lab-loki", "lab-tempo", "lab-pyroscope"}:
             bad_dash.append(f"{f.name}: bad datasource on {p.get('title')}")
+        if any("istio_" in t.get("expr", "") for t in p.get("targets", [])):
+            bad_dash.append(f"{f.name}: obsolete Istio query")
         if not p.get("targets"):
             bad_dash.append(f"{f.name}: no targets on {p.get('title')}")
 check(not bad_dash, f"{len(uids)} Grafana dashboards, {panels} panels (JSON/UID/reference checks)"
@@ -134,20 +137,30 @@ for with_res in (True, False):
     if not with_res:
         c.pop("resources")
     before = json.dumps(c.get("resources"))
-    out = list(mod.render([d], {}))[0]
+    out = list(mod.render([d], {"ts-user-service/ts-user-service": {"readinessProbe": {"httpGet": {"path": "/health", "port": 12342}}}}))[0]
     after = json.dumps(out["spec"]["template"]["spec"]["containers"][0].get("resources"))
     ok_res &= (before == after)
 svc_in = {"kind": "Service", "metadata": {"name": "ts-ui-dashboard"},
           "spec": {"type": "NodePort", "ports": [{"port": 8080, "nodePort": 32677}]}}
 out_svc = list(mod.render([svc_in], {}))[0]["spec"]
 ok_svc = out_svc == {"type": "ClusterIP", "ports": [{"port": 8080}]}
+try:
+    list(mod.render([json.loads(json.dumps(original))], {}))
+    rejected = False
+except ValueError:
+    rejected = True
+check(rejected, "missing unverified readiness fails closed")
 check(ok_res and ok_svc,
       "resource preservation, selector injection, readiness and NodePort removal fixtures")
 
 # ---- 6. no tracked credentials ------------------------------------------
-gone = [".vault.pass", "inventory/group_vars/all/vault.yaml",
+gone = [".vault.pass", "lab-setup/.vault.pass", "lab-setup/inventory/group_vars/all/vault.yaml",
         "kubespray-overlay/inventory/lab/credentials/kubeadm_certificate_key.creds"]
-check(not any((ROOT / g).exists() for g in gone),
+# The check is about *tracked* secrets. Generated (gitignored) files such as the
+# kubeadm certificate key or a local .vault.pass may legitimately exist on a
+# runner; what must never happen is committing them.
+tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split()
+check(not any(g in tracked for g in gone),
       "tracked secret files are absent")
 
 print()
@@ -155,3 +168,4 @@ if failures:
     print(f"{len(failures)} check(s) FAILED")
     sys.exit(1)
 print("ALL OFFLINE CHECKS PASSED")
+

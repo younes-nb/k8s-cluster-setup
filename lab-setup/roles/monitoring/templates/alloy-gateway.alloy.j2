@@ -25,6 +25,7 @@ otelcol.processor.transform "identity" {
       "set(attributes[\"service_namespace\"], resource.attributes[\"service.namespace\"]) where resource.attributes[\"service.namespace\"] != nil",
       "set(attributes[\"k8s_namespace_name\"], resource.attributes[\"k8s.namespace.name\"]) where resource.attributes[\"k8s.namespace.name\"] != nil",
       "set(attributes[\"k8s_pod_name\"], resource.attributes[\"k8s.pod.name\"]) where resource.attributes[\"k8s.pod.name\"] != nil",
+      "set(attributes[\"service_instance_id\"], resource.attributes[\"service.instance.id\"]) where resource.attributes[\"service.instance.id\"] != nil",
     ]
   }
   output {
@@ -110,3 +111,4 @@ prometheus.scrape "self" {
   scrape_interval = "15s"
   forward_to = [prometheus.remote_write.mimir.receiver]
 }
+

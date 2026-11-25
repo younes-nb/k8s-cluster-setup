@@ -1,16 +1,15 @@
 ---
-- name: Ensure Python deps for k8s modules (system packages)
+- name: Install remote Python venv and YAML dependencies
   ansible.builtin.apt:
-    name:
-      - python3-pip
-      - python3-yaml
+    name: [python3-venv, python3-yaml]
     state: present
-    update_cache: yes
-
-- name: Install kubernetes Python client (and openshift)
+    update_cache: true
+- name: Install the pinned Kubernetes module dependencies in an isolated remote environment
   ansible.builtin.pip:
-    name:
-      - kubernetes
-      - openshift
-    executable: pip3
+    name: [kubernetes==33.1.0, jsonpatch==1.33, PyYAML==6.0.2]
+    virtualenv: /opt/lab-ansible-venv
+    virtualenv_command: python3 -m venv
+- name: Use the Kubernetes module interpreter for remaining tasks
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /opt/lab-ansible-venv/bin/python
 

@@ -1,53 +1,36 @@
 {
   "uid": "lab-slo",
-  "title": "05 | RED, dependency graph and SLO",
-  "description": "Request rate, latency and failures per service and per edge, plus the frontend deadline.",
-  "tags": [
-    "research",
-    "lab"
-  ],
+  "title": "06 \u2014 Service RED and dependencies",
   "schemaVersion": 39,
   "version": 1,
-  "editable": false,
   "refresh": "10s",
-  "timezone": "utc",
   "time": {
     "from": "now-30m",
     "to": "now"
   },
+  "tags": [
+    "research-lab"
+  ],
+  "timezone": "utc",
   "panels": [
     {
       "id": 1,
-      "type": "timeseries",
-      "title": "Service requests/s",
+      "title": "Server request rate",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 0,
-        "y": 0,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 0
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(20, sum by(destination_workload)(rate(istio_requests_total{reporter=\"destination\",destination_workload_namespace=\"train-ticket\"}[1m])))",
-          "legendFormat": "{{destination_workload}}",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "reqps"
         },
         "overrides": []
       },
@@ -56,48 +39,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:service_requests:rate1m",
+          "legendFormat": "{{service_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 2,
-      "type": "timeseries",
-      "title": "Service P90",
+      "title": "Server P90 latency",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 12,
-        "y": 0,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 8
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(20, histogram_quantile(0.90, sum by(destination_workload,le)(rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\",destination_workload_namespace=\"train-ticket\"}[1m])))",
-          "legendFormat": "{{destination_workload}}",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "s"
         },
         "overrides": []
       },
@@ -106,48 +85,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:service_latency:p90_seconds",
+          "legendFormat": "{{service_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 3,
-      "type": "timeseries",
-      "title": "Edge requests/s",
+      "title": "Edge request rate",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 0,
-        "y": 8,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 16
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(20, sum by(source_workload,destination_workload)(rate(istio_requests_total{reporter=\"destination\",destination_workload_namespace=\"train-ticket\"}[1m])))",
-          "legendFormat": "{{source_workload}} -> {{destination_workload}}",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "reqps"
         },
         "overrides": []
       },
@@ -156,48 +131,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:edge_requests:rate1m",
+          "legendFormat": "{{client}} \u2192 {{server}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 4,
-      "type": "timeseries",
-      "title": "Edge P90",
+      "title": "Edge P90 latency",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 12,
-        "y": 8,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 24
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(20, histogram_quantile(0.90, sum by(source_workload,destination_workload,le)(rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\",destination_workload_namespace=\"train-ticket\"}[1m])))",
-          "legendFormat": "{{source_workload}} -> {{destination_workload}}",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "s"
         },
         "overrides": []
       },
@@ -206,48 +177,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:edge_latency:p90_seconds",
+          "legendFormat": "{{client}} \u2192 {{server}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 5,
+      "title": "Edge failed calls/s",
+      "description": "Transport/protocol errors are not proof of capacity exhaustion.",
       "type": "timeseries",
-      "title": "Edge error rate",
-      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 0,
-        "y": 16,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 32
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(20, sum by(source_workload,destination_workload)(rate(istio_requests_total{reporter=\"destination\",destination_workload_namespace=\"train-ticket\",response_code=~\"5..\"}[1m])))",
-          "legendFormat": "{{source_workload}} -> {{destination_workload}}",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "reqps"
         },
         "overrides": []
       },
@@ -256,48 +223,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:edge_failure:rate1m",
+          "legendFormat": "{{client}} \u2192 {{server}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 6,
-      "type": "timeseries",
-      "title": "Frontend P90",
+      "title": "Invocation detection violations",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 12,
-        "y": 16,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 40
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.90, sum by(le)(rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\",destination_workload=\"ts-ui-dashboard\"}[1m])))",
-          "legendFormat": "ts-ui-dashboard",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "short"
         },
         "overrides": []
       },
@@ -306,48 +269,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:edge_slo:violation",
+          "legendFormat": "{{client}} \u2192 {{server}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 7,
-      "type": "timeseries",
-      "title": "Frontend deadline violations",
+      "title": "Observed dependency count",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 0,
-        "y": 24,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 48
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "(histogram_quantile(0.99, sum by(le)(rate(istio_request_duration_milliseconds_bucket{reporter=\"destination\",destination_workload=\"ts-ui-dashboard\"}[1m]))) > bool 200)",
-          "legendFormat": "p99 > 200 ms",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bool",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "short"
         },
         "overrides": []
       },
@@ -356,48 +315,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(autoscaler:edge_requests:rate1m > 0)",
+          "legendFormat": "active edges",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 8,
-      "type": "timeseries",
-      "title": "Gateway upstream active requests",
+      "title": "Service metric freshness",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
-        "x": 12,
-        "y": 24,
+        "h": 8,
         "w": 12,
-        "h": 8
+        "x": 0,
+        "y": 56
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(envoy_cluster_upstream_rq_active)",
-          "legendFormat": "__auto",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "s"
         },
         "overrides": []
       },
@@ -406,48 +361,44 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:service_telemetry_age:seconds",
+          "legendFormat": "{{service_name}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
+          "range": true
+        }
+      ]
     },
     {
       "id": 9,
-      "type": "timeseries",
-      "title": "Gateway upstream response codes",
+      "title": "HTTP status distribution",
       "description": "",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "lab-mimir"
       },
       "gridPos": {
+        "h": 8,
+        "w": 12,
         "x": 0,
-        "y": 32,
-        "w": 12,
-        "h": 8
+        "y": 64
       },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by(envoy_response_code_class)(rate(envoy_cluster_upstream_rq_xx[1m]))",
-          "legendFormat": "{{envoy_response_code_class}}",
-          "range": true
-        }
-      ],
       "fieldConfig": {
         "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
+          "unit": "reqps"
         },
         "overrides": []
       },
@@ -456,77 +407,26 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "lastNotNull",
-            "max"
+            "lastNotNull"
           ]
         },
         "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
+          "mode": "multi"
         }
-      }
-    },
-    {
-      "id": 10,
-      "type": "timeseries",
-      "title": "Beyla network flow bytes",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "lab-mimir"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 32,
-        "w": 12,
-        "h": 8
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(beyla_network_flow_bytes_total[1m]))",
-          "legendFormat": "__auto",
+          "expr": "sum by(service_name,http_response_status_code)(rate(http_server_request_duration_seconds_count[1m]))",
+          "legendFormat": "{{service_name}} {{http_response_status_code}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          },
           "range": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "spanNulls": false
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    }
-  ],
-  "links": [
-    {
-      "type": "dashboards",
-      "title": "Research Lab",
-      "tags": [
-        "lab"
-      ],
-      "asDropdown": true,
-      "includeVars": false,
-      "keepTime": true
+      ]
     }
   ]
 }
+

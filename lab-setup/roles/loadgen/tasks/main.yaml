@@ -23,22 +23,6 @@
 
 # The load testing assets live in the sibling research repo
 # (lab-setup/playbook -> repo root -> .. -> sibling).
-- name: Resolve research repo path on the controller
-  ansible.builtin.set_fact:
-    load_testing_src: "{{ playbook_dir }}/../../../predictive-k8s-autoscaling/load_testing"
-
-- name: Check research repo load_testing exists on controller
-  ansible.builtin.stat:
-    path: "{{ load_testing_src }}/k6/trainticket.js"
-  register: _load_testing_src
-  delegate_to: localhost
-  become: false
-
-- name: Fail fast if research repo path is wrong
-  ansible.builtin.assert:
-    that: _load_testing_src.stat.exists
-    fail_msg: "load_testing sources not found at {{ load_testing_src }} — fix load_testing_src in loadgen role"
-
 - name: Download k6 binary
   ansible.builtin.get_url:
     url: "https://github.com/grafana/k6/releases/download/v{{ k6_version }}/k6-v{{ k6_version }}-linux-amd64.tar.gz"
@@ -84,34 +68,26 @@
     state: directory
     mode: "0755"
 
-- name: Copy seed file if available locally (optional, else generated at runtime)
+- name: Install self-contained acceptance workload
   ansible.builtin.copy:
-    src: "{{ load_testing_src }}/seeds/tt_users.json"
-    dest: /opt/loadgen/seeds/tt_users.json
-    mode: "0644"
-  ignore_errors: true
-
-- name: Install k6 test script
+    src: smoke.js
+    dest: /opt/loadgen/smoke.js
+    mode: '0644'
+- name: Install k6 telemetry environment
   ansible.builtin.copy:
-    src: "{{ load_testing_src }}/k6/trainticket.js"
-    dest: /opt/loadgen/trainticket.js
-    mode: "0644"
-
-- name: Install run_test.sh wrapper
+    dest: /opt/loadgen/k6.env
+    mode: '0644'
+    content: |
+      export TARGET_URL=http://{{ gateway_private_ip }}
+      export K6_PROMETHEUS_RW_SERVER_URL=http://{{ monitoring_host }}:{{ monitoring_mimir_port }}/api/v1/push
+      export K6_PROMETHEUS_RW_PUSH_INTERVAL=5s
+      export K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true
+- name: Copy external workload only when explicitly provided
   ansible.builtin.copy:
-    src: "{{ load_testing_src }}/run_test.sh"
-    dest: /opt/loadgen/run_test.sh
-    mode: "0755"
-
-- name: Install the k6 launch wrapper
-  # Copy the repo's script rather than rendering a local template: that template
-  # had drifted from load_testing/k6/launch_k6.sh (no K6_OUT_DIR, /opt/loadgen
-  # baked into paths) -- two sources of truth for the same script.
-  ansible.builtin.copy:
-    src: "{{ load_testing_src }}/k6/launch_k6.sh"
-    dest: /opt/loadgen/launch_k6.sh
-    mode: "0755"
-  ignore_errors: true
+    src: "{{ load_testing_src }}/"
+    dest: /opt/loadgen/research/
+    mode: preserve
+  when: load_testing_src | default('') | length > 0
 
 - name: Clean up temp files
   ansible.builtin.file:
@@ -145,3 +121,4 @@
     enabled: true
     state: "{{ 'restarted' if _exporter_cfg is changed else 'started' }}"
   when: loadgen_host_metrics | bool
+

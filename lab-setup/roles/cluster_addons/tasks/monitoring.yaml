@@ -63,16 +63,16 @@
         enabled: true
         serviceMonitor: {enabled: false}
       kubeApiServer:
-        serviceMonitor: {enabled: false}
+        serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
       coreDns:
-        serviceMonitor: {enabled: false}
+        serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
       kubeControllerManager:
-        serviceMonitor: {enabled: false}
+        serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
       kubeScheduler:
-        serviceMonitor: {enabled: false}
+        serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
       kubeEtcd: {enabled: false}
       kubeProxy:
-        serviceMonitor: {enabled: false}
+        serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
 
 - name: Report the monitoring split
   ansible.builtin.debug:
@@ -80,3 +80,4 @@
       - "kube-state-metrics + the operator are in-cluster ({{ monitoring_ns }})"
       - "Mimir / Loki / Tempo / Grafana / Pyroscope are on {{ monitoring_host }}"
       - "Alloy scrapes in-cluster and remote-writes to {{ monitoring_host }}:{{ monitoring_mimir_port }}"
+

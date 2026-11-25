@@ -1,0 +1,10 @@
+# Copy the verified values to lab-setup/inventory/group_vars/all/zz-local.yaml
+# and encrypt it using Ansible Vault. Never commit the real credentials.
+# Probe example is ONLY an illustration, NOT a verified Train Ticket endpoint.
+tt_probe_overrides: {}
+tt_require_verified_probes: true
+tt_mongodb_exporters: {} # name -> mongodb://read-only-user:...@service.train-ticket.svc:27017/admin
+tt_mysql_exporters: {} # name -> read-only-user:password@tcp(service.train-ticket.svc:3306)/
+tt_db_monitoring_required: true
+# load_testing_src: /absolute/path/to/pinned/research/load_testing
+

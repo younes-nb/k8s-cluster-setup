@@ -17,3 +17,11 @@ credentials/
 lab-setup/inventory/group_vars/all/vault.yaml
 lab-setup/.venv/
 lab-setup/collections/ansible_collections/
+.venv-lab/
+__pycache__/
+*.pyc
+
+lab-setup/inventory/group_vars/all/zz-local.yaml
+acceptance/live-contract.json
+acceptance/evidence/
+

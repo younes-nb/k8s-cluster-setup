@@ -1,0 +1,34 @@
+groups:
+- name: autoscaler_features
+  interval: 5s
+  rules:
+  - record: autoscaler:edge_requests:rate1m
+    expr: sum by (client,server,client_namespace,server_namespace) (rate(traces_service_graph_request_total[1m]))
+  - record: autoscaler:edge_latency:p90_seconds
+    expr: histogram_quantile(0.90, sum by (client,server,client_namespace,server_namespace,le) (rate(traces_service_graph_request_client_seconds_bucket[1m])))
+  - record: autoscaler:edge_failure:rate1m
+    expr: sum by (client,server,client_namespace,server_namespace) (rate(traces_service_graph_request_failed_total[1m]))
+  - record: autoscaler:edge_slo:violation
+    expr: (autoscaler:edge_latency:p90_seconds > bool ({{ tt_slo_seconds }} * 1.1)) and (autoscaler:edge_requests:rate1m > 0) and (autoscaler:edge_latency:p90_seconds >= 0)
+  - record: autoscaler:service_requests:rate1m
+    expr: sum by (service_name,k8s_namespace_name) (rate(http_server_request_duration_seconds_count[1m]))
+  - record: autoscaler:service_latency:p90_seconds
+    expr: histogram_quantile(0.90, sum by (service_name,k8s_namespace_name,le) (rate(http_server_request_duration_seconds_bucket[1m])))
+  - record: autoscaler:frontend_slo:violation
+    expr: (autoscaler:service_latency:p90_seconds{service_name="ts-ui-dashboard",k8s_namespace_name="{{ tt_ns }}"} > bool {{ tt_slo_seconds }}) and (autoscaler:service_requests:rate1m{service_name="ts-ui-dashboard",k8s_namespace_name="{{ tt_ns }}"} > 0) and (autoscaler:service_latency:p90_seconds >= 0)
+  - record: autoscaler:pod_cpu:cores
+    expr: sum by(namespace,pod) (rate(container_cpu_usage_seconds_total{container!="",container!="POD",image!=""}[1m]))
+  - record: autoscaler:pod_cpu:request_ratio
+    expr: autoscaler:pod_cpu:cores / on(namespace,pod) (sum by(namespace,pod) (kube_pod_container_resource_requests{resource="cpu",unit="core"}) > 0) and on(namespace,pod) (count by(namespace,pod) (kube_pod_container_resource_requests{resource="cpu",unit="core"} > 0) == count by(namespace,pod) (kube_pod_container_info))
+  - record: autoscaler:deployment_unavailable:replicas
+    expr: clamp_min(kube_deployment_spec_replicas - on(namespace,deployment) kube_deployment_status_replicas_available,0)
+
+  - record: autoscaler:pod_cpu:throttling_ratio
+    expr: sum by(namespace,pod)(rate(container_cpu_cfs_throttled_periods_total{container!="",container!="POD"}[1m])) / (sum by(namespace,pod)(rate(container_cpu_cfs_periods_total{container!="",container!="POD"}[1m])) > 0)
+  - record: autoscaler:client_failure:ratio
+    expr: sum by(experiment)(rate(k6_lab_failed_total[1m])) / (sum by(experiment)(rate(k6_lab_attempted_total[1m])) > 0)
+  - record: autoscaler:client_outstanding:requests
+    expr: clamp_min(sum by(experiment)(k6_lab_attempted_total) - (sum by(experiment)(k6_lab_good_total) + sum by(experiment)(k6_lab_slow_success_total) + sum by(experiment)(k6_lab_failed_total)), 0)
+  - record: autoscaler:service_telemetry_age:seconds
+    expr: max by(service_name,k8s_namespace_name)(time()-timestamp(http_server_request_duration_seconds_count))
+

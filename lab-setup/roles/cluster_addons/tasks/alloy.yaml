@@ -1,44 +1,53 @@
 ---
-- name: Get node list for Alloy config
+- name: Require database monitoring credentials for research acceptance
+  ansible.builtin.assert:
+    that: (not tt_db_monitoring_required | bool) or ((tt_mongodb_exporters | length + tt_mysql_exporters | length) > 0)
+    fail_msg: Configure least-privilege database exporter credentials for the exact pinned benchmark before research deployment.
+- name: Initialize database exporter Secret values
   ansible.builtin.set_fact:
-    _alloy_nodes: "{{ groups['nodes'] | default([]) }}"
-
-- name: Render Alloy manifests locally
-  ansible.builtin.template:
-    src: alloy.yaml.j2
-    dest: /tmp/alloy.yaml
-    mode: "0644"
-  vars:
-    nodes_list: "{{ _alloy_nodes }}"
-  register: _alloy_template
-
-- name: Apply Alloy manifests
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    apply -f /tmp/alloy.yaml -n {{ monitoring_ns }}
-  register: _alloy_apply
-  changed_when: _alloy_template.changed
-
-- name: Restart Alloy on config change (running pods keep old config otherwise)
-  ansible.builtin.command: >
-    kubectl --kubeconfig="{{ kubeconfig_path }}"
-    -n "{{ monitoring_ns }}"
-    rollout restart deployment/alloy
-  when: _alloy_apply is changed
-  changed_when: true
-  failed_when: false
-
-- name: Wait for Alloy deployment to be available
-  kubernetes.core.k8s_info:
-    api_version: apps/v1
-    kind: Deployment
-    name: alloy
-    namespace: "{{ monitoring_ns }}"
+    db_monitor_env: {}
+  no_log: true
+- name: Assemble MongoDB exporter credentials
+  ansible.builtin.set_fact:
+    db_monitor_env: "{{ db_monitor_env | combine({'MONGO_' ~ (mongo_index + 1): item.value}) }}"
+  loop: "{{ tt_mongodb_exporters | dict2items }}"
+  loop_control: {index_var: mongo_index}
+  no_log: true
+- name: Assemble MySQL exporter credentials
+  ansible.builtin.set_fact:
+    db_monitor_env: "{{ db_monitor_env | combine({'MYSQL_' ~ (mysql_index + 1): item.value}) }}"
+  loop: "{{ tt_mysql_exporters | dict2items }}"
+  loop_control: {index_var: mysql_index}
+  no_log: true
+- name: Provision collector credentials as a Kubernetes Secret
+  kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
-  register: _alloy_dep
-  until: >
-    _alloy_dep.resources | length > 0 and
-    (_alloy_dep.resources[0].status.availableReplicas | default(0)) >=
-    (_alloy_dep.resources[0].spec.replicas | default(1))
-  retries: 30
-  delay: 10
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata: {name: alloy-db-monitoring, namespace: "{{ monitoring_ns }}"}
+      stringData: "{{ db_monitor_env }}"
+  register: db_secret
+  no_log: true
+- name: Apply the distinct collector manifests
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    template: "{{ item }}.yaml.j2"
+  loop: [alloy, alloy-node, alloy-profile]
+  register: collector_apply
+- name: Restart changed collectors
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ monitoring_ns }} rollout restart {{ item.kind }}/{{ item.name }}
+  loop:
+    - {kind: deployment, name: alloy}
+    - {kind: daemonset, name: alloy-node}
+    - {kind: daemonset, name: alloy-profile}
+  when: collector_apply is changed or db_secret is changed
+- name: Require every collector rollout to finish
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ monitoring_ns }} rollout status {{ item }} --timeout=600s
+  loop: [deployment/alloy, daemonset/alloy-node, daemonset/alloy-profile]
+  changed_when: false
+

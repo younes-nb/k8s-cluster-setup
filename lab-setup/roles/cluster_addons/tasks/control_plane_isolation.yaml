@@ -44,3 +44,4 @@
   loop: "{{ control_plane_nodes }}"
   loop_control:
     label: "{{ item }}"
+

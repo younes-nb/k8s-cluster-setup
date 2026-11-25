@@ -1,88 +1,27 @@
-# Acceptance checks (live)
+# Clean-install acceptance (agent must execute on new CloudLab allocation)
 
-Do not treat the offline check as a successful deployment. Run these on the
-trusted lab runner in a maintenance window and fix failures before any
-performance trial.
+No live deployment has been performed by the author of this merged source. Static YAML/Jinja/shell/Python checks are not semantic validation. Treat the following as blocking acceptance gates. Record commands and redacted outputs in `acceptance/evidence/`; commit durable fixes in the Ansible source, not only live kubectl edits. A successful setup is repeatable on a fresh allocation and idempotent on rerun when no experiment is active.
 
-## Offline
+## 1. Before installation
 
-```bash
-python3 tests/static_validate.py
-```
+- Verify eight machine identities, unique private addresses and actual LAN routing, SSH fingerprints, clocks, hardware capacity, dedicated disk and free VIP via ARP. Do not format unknown devices. Verify checksum, image/chart versions, version compatibility, and the exact Kubespray commit. Pin resolved image digests and the benchmark Git commit in reproducibility evidence; direct dependencies are pinned but transitive dependencies and OS package versions still need a lock/inventory.
+- Run `python3 tests/static_validate.py` and `python3 tests/test_live_validator.py`; validate Ansible syntax with pinned collections and inventory; render ALL manifests and River configs, including the external gateway, with real vars; run `alloy validate` on the pinned binary; validate Mimir/Loki/Tempo/Pyroscope configs against their actual binaries; run Helm template/schema checks and Kubernetes server-side dry runs after CRDs exist. Correct unsupported flags or component attributes in source. Do not downgrade silently or use floating latest tags.
+- Fetch Train Ticket 0.0.4 and record exact manifest and image digests. The attached master archive is not proof of the 0.0.4 images' behavior. Inspect startup logs, health endpoint implementations and the real image tools. Populate per-container probes in `tt_probe_overrides`, including database-aware checks. Verify probes can run, cannot accept mere 404, and mark Ready only when intended serving function is available. Avoid downstream cascading readiness failure and aggressive liveness restarts. Preserve original resources/JVM settings exactly, including absent values. Validate database mounts, storage capacity, initialization and seed state; ensure no benchmark pods on masters. If legacy API versions or selectors require adaptation, fix renderer rather than resource limits.
 
-Then install the pinned collections and syntax-check every playbook:
+## 2. Deploy in stages and repair as necessary
 
-```bash
-cd lab-setup
-ansible-galaxy collection install -r collections/requirements.yml -p collections
-for pb in preparing loadgen monitoring postcluster migrate-legacy native-hpa; do
-  ansible-playbook -i inventory/host.yaml playbook/$pb.yaml --syntax-check
-done
-```
+Deploy the external monitoring host first. Verify exact mount and device UUID, firewall (including reboot), all containers, backend readiness, retention, datasource UIDs and credentials. Run Kubespray with dedicated roles and reservations. Confirm kubelet configs contain CPU/memory/PID/storage reservations. Inspect etcd quorum and internal API LB; no external API LB. Enable TLS verified Metrics Server and direct cAdvisor scrapes. Kubelet server rotation may create pending CSRs: inspect signer, authenticated node identity, groups, subject and expected SANs against actual node IPs; approve ONLY verified matching kubelet-serving CSRs or configure a trusted serving certificate process. Never blindly approve every CSR or fall back to insecure TLS. Check actual cluster CA and certificate expiry, API audit policy and secret encryption. Verify no broad nodes/proxy permission. Validate control-plane ServiceMonitor endpoints, TLS/auth, actual kubeadm etcd localhost metrics listener and all three etcd members. If required, correct Kubespray vars and regenerate manifests, not by exposing etcd admin credentials.
 
-Then validate the real Helm templates (`helm template`, `kubectl apply
---dry-run=server` after CRDs exist) and the rendered River files (`alloy
-validate`), and `docker compose config --quiet` on mon1.
+Deploy add-on prerequisites and object quota before Train Ticket. All DBs and applications must converge; test data persists over a controlled restart. Configure database monitoring accounts with minimal permissions; supply encrypted `tt_mongodb_exporters` and `tt_mysql_exporters` for every deployed datastore (validate read-only privileges and identities; use the appropriate driver version). Do not commit DSNs. Configure gateway and verify GatewayClass, Programmed, Accepted and ResolvedRefs, private VIP from both external hosts, no NodePort allocation, expected EndpointSlices and successful frontend API routing. Verify gateway resource headroom and proxy metrics. Install Alloy and Beyla and validate all collector replicas (six node agents, three profiling agents, six Beyla agents, one cluster collector). Confirm the external OTLP receiver, resource identity, service graph and runtime metrics. Confirm firewall allows only authorized private nodes; verify effective source IPs (pod SNAT/routing), no public bindings, no unauthenticated public access. Test clean reboot of monitoring host if safe. Use TLS/auth for untrusted paths; private research LAN transport is deliberately not asserted to be encrypted end-to-end.
 
-## Topology and gateway
+## 3. Acceptance under active workload
 
-```bash
-kubectl get nodes -o wide
-kubectl get pods -A -o wide
-kubectl get gatewayclass,gateway,httproute -A
-kubectl get svc -A
-kubectl get hpa -A
-kubectl -n train-ticket get deploy,pods,pvc
-```
+1. Validate meaningful Train Ticket business workflows (query/search, authentication, order workflow and required data seeding) from k6 on loadgen. Use the exact version's APIs and verify response semantics, not just HTTP 200. Existing research load scripts are not supplied here; inspect/repair their accounting and pin their revision. Run a sustained open-loop workload with unique experiment ID. Verify offered vs achieved load, no loadgen saturation, no unexpected dropped iterations, timeout accounting, request start/end conservation with explicit unknowns, business rejection classification, and remote-write timestamps. The supplied smoke.js is only a connectivity/metric smoke test.
+2. Create `acceptance/live-contract.json` from independently identified expected Deployments, active services and expected directed edges exercised by this workload (do not generate it solely from metrics that happen to exist). Use `acceptance/live-contract.example.json` as the schema. Fill extra checks for all 3 etcd members, control-plane API/scheduler/controller/DNS, gateway errors/queue/timeout metrics, DB exporter health and all datastore identities, JVM/runtime metrics, network flows/TCP, collector health, recording rules, k6 client latency, and CPU/memory/pressure. Mandatory failures must fail the acceptance. Some event-triggered counters will require exercising the event before checking, or a known zero present; do not substitute zero for no data.
+3. Run `python3 tests/check_live_metrics.py --mimir http://<monitoring-ip>:18080 --contract acceptance/live-contract.json --experiment <id>`. Core telemetry max age is 15 seconds (5s intended collection); diagnosis-only checks have declared age limits. Run while workload is active and long enough to populate rate windows; inspect *raw* series ages and distributions, not only last rule timestamps. Confirm expected graph and histogram semantics including 200/220 ms; test known fast and slow responses, timeout, transport failure and an application rejection separately. Independently evaluate PBScaler P90 observation violation rate and request failure rate; no-traffic windows are missing, not healthy.
+4. Grafana: provision and authenticate; open all 11 dashboards, inspect each panel query and units during an appropriate stimulus, correct actual metric names and labels, test all four data sources, show trace and CPU profiles in Explore. Verify no obsolete metrics and no unexplained empty panels. Do not force series into existence or mask missing data. Confirm logs/events and trace correlation. DB and runtime panels require real instrumentation, not inferred values.
+5. Verify replica ownership (no native HPA and no external replica writer for clean baseline). Under explicit acceptance authorization, select a known horizontally scalable stateless Deployment and test scale-out then scale-in, observing timestamps for desired, assigned, running, Ready and available, actual serving traffic, rejected/unschedulable pods, and API responses. Restore original replica count. Check no DB changes, resource changes or unexpected controller writes. Test native HPA only as a separate run if original CPU requests support it; if not report the baseline incompatibility. Use `kubectl auth can-i --as=system:serviceaccount:autoscaling-research:replica-controller ...` to test namespace scope; restrict scale writes further to the exact stateless target list before controller deployment. Don't provide administrator kubeconfig to algorithms.
+6. Measure telemetry overhead and ingestion lag under representative high load; confirm no collector OOM, cardinality explosion or storage pressure. Verify that a simulated collector failure, omitted expected edge and stale data cause validation failures. Capture query runtime and decision cycle budget; the proposed model/controller is not yet present, so actual inference timing remains future work. Verify idempotent reruns and archive rendered benchmark specs, component versions, workload SHA, experiment metadata, source diff, evidence and remaining unsupported features.
 
-Expect: six nodes Ready, benchmark pods only on workers, **no `istio-proxy`
-container in any pod**, no benchmark HPA except an explicit baseline, Gateway
-`Programmed`, HTTPRoute `Accepted`/`ResolvedRefs`, Envoy Service type
-`LoadBalancer` with `allocateLoadBalancerNodePorts: false`, and
-`curl -f http://10.10.1.50/` answering 200 from the loadgen.
+Do not report research-ready until all mandatory checks pass. Any unsupported JVM/protocol/failure signals must be explicitly addressed or documented as limitations. A passing static or metric script alone does not establish complete workflow semantics, telemetry equivalence, or scaling causality.
 
-Also verify the readiness probes against the *actual* images, and that a
-container failure is detected.
-
-## Collectors and databases
-
-```bash
-kubectl -n monitoring get deploy,ds,pods -o wide
-kubectl -n monitoring logs deploy/alloy --tail=100
-kubectl -n monitoring logs ds/beyla --tail=100
-```
-
-On mon1:
-
-```bash
-findmnt --mountpoint /var/lib/monitoring
-cd /opt/monitoring && sudo docker compose ps
-sudo docker compose logs --tail=100 alloy-gateway
-sudo iptables -S DOCKER-USER
-ss -lntp
-```
-
-Confirm Mimir/Loki/Tempo/Pyroscope/Grafana are healthy, the data dirs are
-writable by the image UIDs, and that the new `alloy-gateway` and `pyroscope`
-services start without disturbing the existing 105 GB of data.
-
-## Live metric checks
-
-```bash
-python3 tests/check_live_metrics.py --mimir http://10.10.1.2:18080
-```
-
-It fails for missing, stale or non-finite required signals. Note which checks
-are *expected* to report zero because of the mesh retirement (destination-side
-Istio histograms) — those are documented limitations, not regressions.
-
-Then open all seven dashboards in Grafana (folder **Research Lab**) under known
-load and confirm the plots are non-empty and the missing-data states look right.
-
-## Research acceptance
-
-Run controlled load, burst, timeout, intentional-rejection, downstream-DB
-failure and unschedulable-replica cases. Compare against independent k6
-measurements at identical timestamps and windows. Confirm labels survive pod
-recreation, measure telemetry age and decision-cycle latency, and never run two
-autoscalers against the same Deployment.

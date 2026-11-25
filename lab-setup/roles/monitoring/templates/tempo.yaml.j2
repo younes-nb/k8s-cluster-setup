@@ -18,3 +18,8 @@ storage:
       path: /var/tempo/traces
     wal:
       path: /var/tempo/wal
+
+backend_worker:
+  compaction:
+    block_retention: {{ monitoring_tempo_retention }}
+

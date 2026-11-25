@@ -1,57 +1,19 @@
 ---
-# Add-on order matters:
-#   cert-manager -> ACME solver -> monitoring (KSM + operator) -> Grafana
-#   datasources -> MetalLB -> Envoy Gateway -> the application gateway
-#   -> tracing sampler -> control-plane isolation -> kubelet reservations
-#   -> Alloy -> Beyla -> TrainTicket -> ResourceQuota
-#
-# In-cluster Mimir/Loki/Tempo/Grafana are RETIRED: they run on the `monitoring`
-# host (playbook/monitoring.yaml, roles/monitoring). Alloy stays in the cluster
-# because it must reach pod IPs.
-
-- import_tasks: cert_manager.yaml
-  tags: [cert-manager]
-
-- import_tasks: cert_issuer.yaml
-  tags: [cert-issuer]
-
-- import_tasks: monitoring.yaml
-  tags: [monitoring]
-
-- import_tasks: grafana_datasources.yaml
-  tags: [monitoring]
-
-# MetalLB owns the private application VIP, then Envoy Gateway consumes it.
-# Both must exist before the Gateway is applied.
-- import_tasks: gateway.yaml
-  tags: [gateway, metallb, envoy]
-
-# Tracing: Istio is gone. Tempo runs on the monitoring host and receives OTLP
-# from the Envoy Gateway / Beyla directly, so there is no in-cluster tracing
-# task any more (the old one applied an Istio Telemetry sampler).
-
-# Control-plane isolation and kubelet reservations. The masters are NOT tainted
-# by default: at this cluster size the namespace needs the whole cluster.
 - import_tasks: control_plane_isolation.yaml
   tags: [control-plane]
-
-# Pin the autoscaler controllers to the masters; the benchmark is pinned to the
-# workers by the rendered TrainTicket manifests.
-- import_tasks: autoscaler_placement.yaml
-  tags: [control-plane, autoscaler]
-
-- import_tasks: kubelet_reservations.yaml
-  tags: [kubelet-reservations]
-
+- import_tasks: monitoring.yaml
+  tags: [monitoring]
+- import_tasks: resource_quota.yaml
+  tags: [resource-quota]
+- import_tasks: train_ticket.yaml
+  tags: [train-ticket]
+- import_tasks: gateway.yaml
+  tags: [gateway]
 - import_tasks: alloy.yaml
   tags: [alloy]
-
 - import_tasks: beyla.yaml
   tags: [beyla]
 
-- import_tasks: train_ticket.yaml
-  tags: [train-ticket]
+- import_tasks: autoscaler_rbac.yaml
+  tags: [autoscaler-rbac]
 
-# Namespace ceiling for TrainTicket (declarative; was live-only before).
-- import_tasks: resource_quota.yaml
-  tags: [resource-quota]

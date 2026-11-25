@@ -17,6 +17,28 @@
 # The stack runs under `docker compose`, so the host needs both the engine and
 # the v2 compose plugin. `preparing.yaml` only covers the `nodes` group, so a
 # fresh monitoring host arrives with neither.
+- name: Require a safe Grafana password (alphanumeric or URL-safe characters)
+  ansible.builtin.assert:
+    that: lookup('env','GRAFANA_ADMIN_PASSWORD') is match('^[A-Za-z0-9_-]{16,}$')
+  no_log: true
+
+- name: Install monitoring host exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+    update_cache: true
+- name: Bind monitoring host exporter to private interface
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: '^ARGS='
+    line: 'ARGS="--web.listen-address={{ monitoring_host }}:9100"'
+  register: mon_exporter
+- name: Start monitoring host exporter
+  ansible.builtin.service:
+    name: prometheus-node-exporter
+    enabled: true
+    state: "{{ 'restarted' if mon_exporter.changed else 'started' }}"
+
 - name: Check for Docker
   ansible.builtin.command: docker --version
   register: _docker_check
@@ -31,7 +53,6 @@
     state: present
     update_cache: true
   become: true
-  when: _docker_check.rc != 0
 
 - name: Verify docker compose is usable
   ansible.builtin.command: docker compose version
@@ -54,6 +75,7 @@
     DEV: "{{ monitoring_disk_device | default('') }}"
     MNT: "{{ monitoring_data_dir }}"
     LABEL: "{{ monitoring_disk_label }}"
+    ALLOW_FORMAT: "{{ monitoring_allow_format | bool | ternary('true', 'false') }}"
   become: true
   register: _mon_disk
   changed_when: "'mounted' in (_mon_disk.stdout | default(''))"
@@ -62,6 +84,26 @@
 - name: Report disk preparation
   ansible.builtin.debug:
     msg: "{{ _mon_disk.stdout | default('') }}"
+
+- name: Create Docker systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: '0755'
+- name: Require dedicated monitoring mount before Docker starts
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker.service.d/monitoring-mount.conf
+    content: |
+      [Unit]
+      RequiresMountsFor={{ monitoring_data_dir }}
+      [Service]
+      ExecStartPre=/usr/bin/mountpoint -q {{ monitoring_data_dir }}
+    mode: '0644'
+  register: mount_guard
+- name: Reload systemd units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: mount_guard.changed
 
 - name: Create base directories
   ansible.builtin.file:
@@ -107,7 +149,6 @@
     - {path: "{{ monitoring_data_dir }}/alloy", owner: "0", group: "0"}
     - {path: "{{ monitoring_data_dir }}/pyroscope", owner: "0", group: "0"}
   become: true
-  failed_when: false
 
 - name: Render Mimir config
   ansible.builtin.template:
@@ -115,6 +156,21 @@
     dest: "{{ monitoring_base_dir }}/conf/mimir.yaml"
     mode: "0644"
   become: true
+  notify: restart monitoring stack
+
+- name: Install recording rules
+  ansible.builtin.template:
+    src: autoscaler-rules.yaml.j2
+    dest: "{{ monitoring_base_dir }}/conf/rules/anonymous/autoscaler.yaml"
+    mode: "0644"
+  notify: restart monitoring stack
+
+- name: Install protected Grafana Compose environment
+  ansible.builtin.copy:
+    dest: "{{ monitoring_base_dir }}/.env"
+    content: "GRAFANA_ADMIN_PASSWORD={{ lookup('env','GRAFANA_ADMIN_PASSWORD') }}\n"
+    mode: "0600"
+  no_log: true
   notify: restart monitoring stack
 
 - name: Render Loki config
@@ -163,7 +219,6 @@
     dest: "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards/json/"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
 
 - name: Render compose file
   ansible.builtin.template:
@@ -172,6 +227,41 @@
     mode: "0644"
   become: true
   notify: restart monitoring stack
+
+- name: Install private ingress firewall script
+  ansible.builtin.copy:
+    src: guard-monitoring-ports.sh
+    dest: /usr/local/sbin/guard-monitoring-ports
+    mode: '0750'
+- name: Install firewall environment
+  ansible.builtin.copy:
+    dest: /etc/default/lab-monitoring-firewall
+    mode: '0600'
+    content: |
+      MON_IP={{ monitoring_host }}
+      TRUSTED_IPS="{{ cloudlab_private_ips.values() | list | join(' ') }}"
+- name: Install firewall service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/lab-monitoring-firewall.service
+    mode: '0644'
+    content: |
+      [Unit]
+      After=docker.service
+      Requires=docker.service
+      PartOf=docker.service
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      EnvironmentFile=/etc/default/lab-monitoring-firewall
+      ExecStart=/usr/local/sbin/guard-monitoring-ports
+      [Install]
+      WantedBy=docker.service
+- name: Apply ingress firewall before exposing monitoring services
+  ansible.builtin.systemd_service:
+    name: lab-monitoring-firewall
+    daemon_reload: true
+    enabled: true
+    state: restarted
 
 - name: Flush handlers (start the stack if it is not running)
   ansible.builtin.meta: flush_handlers
@@ -215,3 +305,4 @@
 
 - name: Handlers are declared in handlers/main.yml
   ansible.builtin.meta: noop
+

@@ -13,7 +13,6 @@
     rollout restart daemonset/beyla
   when: _beyla_cfg is changed
   changed_when: true
-  failed_when: false
 
 - name: Wait for Beyla DaemonSet to be ready on all nodes
   kubernetes.core.k8s_info:
@@ -25,7 +24,9 @@
   register: _beyla_ds
   until: >
     _beyla_ds.resources | length > 0 and
-    _beyla_ds.resources[0].status.numberReady ==
+    (_beyla_ds.resources[0].status.desiredNumberScheduled | default(0)) == 6 and
+    (_beyla_ds.resources[0].status.numberReady | default(0)) ==
     _beyla_ds.resources[0].status.desiredNumberScheduled
   retries: 60
   delay: 10
+

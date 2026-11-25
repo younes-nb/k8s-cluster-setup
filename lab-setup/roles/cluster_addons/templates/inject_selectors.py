@@ -45,6 +45,10 @@ def render(docs, overrides):
 
         if kind == "Deployment":
             spec = d["spec"]
+            # The 0.0.4 Spring Boot images can take ~10 min cold to bind their
+            # ports; the default 600s progress deadline fails the rollout on a
+            # first pull. This is a rollout-metadata field, not a resource change.
+            spec.setdefault("progressDeadlineSeconds", 1800)
             labels = spec["template"]["metadata"]["labels"]
             # Upstream 0.0.4 floats the datastore images on ``mongo`` / ``mysql``.
             # Docker Hub's ``mongo`` tag now resolves to 9.x, which refuses to
@@ -58,20 +62,21 @@ def render(docs, overrides):
             if not spec.get("selector"):
                 spec["selector"] = {"matchLabels": copy.deepcopy(labels)}
             pod = spec["template"]["spec"]
-            # Stateful services own a node-local (local-path) PersistentVolume.
-            # Pinning them to the workers would make them unschedulable: the PV
-            # is bound to whichever node the volume was provisioned on. They are
-            # left on their existing node, which the PV's nodeAffinity enforces,
-            # and they tolerate the control-plane taint so they can live there.
-            # Only stateless Deployments are pinned to the workers.
+            pod.setdefault("nodeSelector", {})["lab.example.com/worker"] = "true"
             if name.endswith(("-mongo", "-mysql")):
-                pod.setdefault("tolerations", []).append({
-                    "key": "node-role.kubernetes.io/control-plane",
-                    "operator": "Exists",
-                    "effect": "NoSchedule",
-                })
-            else:
-                pod.setdefault("nodeSelector", {})["lab.example.com/worker"] = "true"
+                spec["replicas"] = 1
+                spec["strategy"] = {"type": "Recreate"}
+                path = "/data/db" if name.endswith("-mongo") else "/var/lib/mysql"
+                claim = name + "-data"
+                db = pod["containers"][0]
+                mounts = db.setdefault("volumeMounts", [])
+                existing = next((m for m in mounts if m.get("mountPath") == path), None)
+                if existing is None:
+                    mounts.append({"name": "lab-db-data", "mountPath": path})
+                    pod.setdefault("volumes", []).append({"name": "lab-db-data", "persistentVolumeClaim": {"claimName": claim}})
+                    yield {"apiVersion": "v1", "kind": "PersistentVolumeClaim", "metadata": {"name": claim}, "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": os.environ.get("TT_STORAGE_CLASS", "local-path"), "resources": {"requests": {"storage": os.environ.get("TT_DB_PVC_SIZE", "2Gi")}}}}
+                elif not any(v.get("name") == existing["name"] and "persistentVolumeClaim" in v for v in pod.get("volumes", [])):
+                    raise ValueError(f"{name}: upstream data mount is not a PVC; inspect before changing")
             for c in pod["containers"]:
                 key = f"{name}/{c['name']}"
                 if key in overrides:
@@ -79,6 +84,8 @@ def render(docs, overrides):
                     if "startupProbe" in overrides[key]:
                         c["startupProbe"] = overrides[key]["startupProbe"]
                 elif "readinessProbe" not in c:
+                    if os.environ.get("TT_REQUIRE_VERIFIED_PROBES", "true").lower() == "true":
+                        raise ValueError(f"{key}: verified readinessProbe required; inspect pinned image and supply TT_PROBES")
                     ports = c.get("ports") or []
                     if not ports:
                         raise ValueError(
@@ -122,3 +129,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -2,6 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: Mimir
+    uid: lab-mimir
     type: prometheus
     url: http://mimir:8080/prometheus
     access: proxy
@@ -9,13 +10,27 @@ datasources:
     editable: true
 
   - name: Loki
+    uid: lab-loki
     type: loki
     url: http://loki:3100
     access: proxy
     editable: true
 
   - name: Tempo
+    uid: lab-tempo
     type: tempo
     url: http://tempo:3200
     access: proxy
     editable: true
+
+    jsonData:
+      serviceMap:
+        datasourceUid: lab-mimir
+
+  - name: Pyroscope
+    uid: lab-pyroscope
+    type: grafana-pyroscope-datasource
+    url: http://pyroscope:4040
+    access: proxy
+    editable: false
+

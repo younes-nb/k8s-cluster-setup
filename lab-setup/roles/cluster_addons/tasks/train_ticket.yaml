@@ -1,7 +1,6 @@
 ---
 # Deploy the pinned upstream TrainTicket 0.0.4 workload with its OWN resource
-# requests/limits/JVM settings preserved (via templates/inject_selectors.py and
-# templates/restore_upstream.py). No Istio, no NodePorts, no in-namespace
+# requests/limits/JVM settings preserved (via templates/inject_selectors.py). No Istio, no NodePorts, no in-namespace
 # Gateway API proxy: the application path is the Envoy Gateway VIP.
 #
 # The playbook that applies this refuses to run if any HPA already owns the
@@ -43,6 +42,10 @@
     version: "{{ tt_repo_version }}"
     depth: 1
     force: true
+    # update: no keeps reruns idempotent. The module's update path crashes on an
+    # existing detached-HEAD tag clone ("'NoneType' object has no attribute
+    # 'startswith'"); a pinned tag never needs a git update.
+    update: no
   register: _tt_git
 
 - name: Stage the upstream manifest renderer
@@ -59,10 +62,30 @@
     "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part2.yml"
     "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part3.yml"
   environment:
+    TT_REQUIRE_VERIFIED_PROBES: "{{ tt_require_verified_probes | bool | ternary('true', 'false') }}"
+    TT_STORAGE_CLASS: "{{ storage_class }}"
+    TT_DB_PVC_SIZE: "{{ tt_db_pvc_size }}"
     TT_PROBES: "{{ tt_probe_overrides | to_json }}"
     TT_MONGO_IMAGE: "{{ tt_mongo_image }}"
     TT_MYSQL_IMAGE: "{{ tt_mysql_image }}"
   changed_when: false
+
+- name: Record upstream commit
+  ansible.builtin.command: git -C {{ tt_clone_dir }} rev-parse HEAD
+  register: tt_commit
+  changed_when: false
+- ansible.builtin.debug:
+    var: tt_commit.stdout
+
+- name: Record rendered benchmark file digests
+  ansible.builtin.command: >-
+    sha256sum {{ tt_clone_dir }}/deployment/k8s-deployment.ready/ts-deployment-part1.yml
+    {{ tt_clone_dir }}/deployment/k8s-deployment.ready/ts-deployment-part2.yml
+    {{ tt_clone_dir }}/deployment/k8s-deployment.ready/ts-deployment-part3.yml
+  register: tt_manifest_digests
+  changed_when: false
+- ansible.builtin.debug:
+    var: tt_manifest_digests.stdout_lines
 
 - name: Refuse to act if a native HPA already owns the benchmark
   ansible.builtin.command: >-
@@ -77,6 +100,11 @@
       Native HPAs are present. Stop external autoscalers and remove them before
       benchmark setup: never run two replica writers against one Deployment.
 
+- name: Require explicit exclusive replica ownership
+  ansible.builtin.assert:
+    that: not (lookup('env', 'LAB_EXCLUSIVE_WRITER_CONFIRMED') != 'true')
+    fail_msg: Set LAB_EXCLUSIVE_WRITER_CONFIRMED=true only after stopping other replica writers.
+
 - name: Apply the upstream manifests (resources unchanged)
   ansible.builtin.command: >-
     kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
@@ -84,21 +112,6 @@
   loop: [ts-deployment-part1.yml, ts-deployment-part2.yml, ts-deployment-part3.yml]
   register: _tt_apply
   changed_when: "'created' in _tt_apply.stdout or 'configured' in _tt_apply.stdout"
-
-- name: Stage the live upstream resource restoration helper
-  ansible.builtin.copy:
-    src: "{{ role_path }}/templates/restore_upstream.py"
-    dest: /tmp/restore-upstream.py
-    mode: "0700"
-  when: allow_live_migration | bool
-
-- name: Restore the exact upstream resources and drop the legacy JVM override
-  ansible.builtin.command: >-
-    python3 /tmp/restore-upstream.py {{ tt_ns }} {{ kubeconfig_path }}
-    "{{ tt_clone_dir }}/deployment/k8s-deployment.ready"
-  when: allow_live_migration | bool
-  register: _restore
-  changed_when: "'patched' in _restore.stdout"
 
 - name: Configure the frontend proxy for the benchmark API paths
   kubernetes.core.k8s:
@@ -134,79 +147,10 @@
               - name: nginx-override
                 configMap: {name: ts-ui-dashboard-nginx}
 
-- name: Read the benchmark Deployments
-  ansible.builtin.command: >-
-    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
-    get deploy -o json
-  register: _tt_state
-  changed_when: false
-
-- name: Collect the datastore deployment names
-  ansible.builtin.set_fact:
-    _db_names: >-
-      {{ (_tt_state.stdout | from_json)['items']
-         | map(attribute='metadata.name') | select('search', '-(mongo|mysql)$')
-         | list }}
-
-- name: Create the datastore PVCs (fresh local-path volumes)
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    definition:
-      apiVersion: v1
-      kind: PersistentVolumeClaim
-      metadata:
-        name: "{{ item }}-data"
-        namespace: "{{ tt_ns }}"
-      spec:
-        accessModes: [ReadWriteOnce]
-        storageClassName: "{{ storage_class }}"
-        resources:
-          requests:
-            storage: "{{ tt_db_pvc_size }}"
-  loop: "{{ _db_names }}"
-  loop_control:
-    label: "{{ item }}-data"
-
-- name: Bring the datastores up from a clean volume
-  ansible.builtin.command: >-
-    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
-    scale deployment --replicas=1 "{{ item }}"
-  loop: "{{ _db_names }}"
-  loop_control:
-    label: "{{ item }}"
-
-- name: Wait for the datastores to become Ready
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ kubeconfig_path }}"
-    api_version: apps/v1
-    kind: Deployment
-    name: "{{ item }}"
-    namespace: "{{ tt_ns }}"
-  register: _db_ready
-  until: >-
-    (_db_ready.resources[0].status.readyReplicas | default(0)) >=
-    (_db_ready.resources[0].spec.replicas | default(1))
-  retries: 60
-  delay: 10
-  loop: "{{ _db_names }}"
-  loop_control:
-    label: "{{ item }}"
-  failed_when: false
-
 - name: Wait for every benchmark Deployment to finish rolling out
   ansible.builtin.command: >-
     kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
-    rollout status deployment --timeout=900s
+    rollout status deployment --timeout=1800s
   register: _rollout
   changed_when: false
-  failed_when: false
 
-- name: Report the benchmark rollout
-  ansible.builtin.debug:
-    msg: >-
-      converged: {{ (_rollout.stdout_lines | default([])) | length }} deployment(s)
-      reported success. Datastores own node-local local-path volumes on this
-      cluster, so a database pod can remain Pending when its PV is bound to a
-      node outside its selector; the stateless benchmark is what the load tests
-      exercise and it converges.

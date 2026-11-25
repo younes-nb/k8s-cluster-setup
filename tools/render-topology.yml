@@ -41,6 +41,10 @@
             if vip not in ipaddress.ip_network('10.10.1.0/24') or vip in (
                     ipaddress.ip_address('10.10.1.0'), ipaddress.ip_address('10.10.1.255')):
                 raise SystemExit('Gateway VIP must be an unused host address on 10.10.1.0/24')
+            keys = ['LOADGEN','MONITORING','MASTER1','MASTER2','MASTER3','WORKER1','WORKER2','WORKER3']
+            ips = [ipaddress.ip_address(d.get(k+'_PRIVATE_IP', '10.10.1.'+str(i+1))) for i,k in enumerate(keys)]
+            if len(set(ips)) != 8 or vip in ips or any(x not in ipaddress.ip_network('10.10.1.0/24') or x in (ipaddress.ip_address('10.10.1.0'),ipaddress.ip_address('10.10.1.255')) for x in ips):
+                raise SystemExit('Private node IPs must be unique usable LAN addresses, distinct from VIP')
             print(json.dumps(d))
       register: _env_json
       changed_when: false
@@ -54,3 +58,4 @@
         src: ../cluster-topology.yml.j2
         dest: ../cluster-topology.yml
         mode: "0644"
+

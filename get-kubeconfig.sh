@@ -16,6 +16,7 @@ TUNNEL_PID_FILE="${TUNNEL_PID_FILE:-/tmp/kubeconfig-tunnel-${HOST}-${TUNNEL_PORT
 command -v ssh >/dev/null || { echo "ssh not found"; return 1; }
 command -v kubectl >/dev/null || { echo "kubectl not found"; return 1; }
 
+umask 077
 TMP_OUT="${OUT}.tmp.$$"
 rm -f -- "$TMP_OUT"
 if ! ssh ${SSH_OPTS:-} "$HOST" 'sudo cat /etc/kubernetes/admin.conf' > "$TMP_OUT"; then
@@ -51,11 +52,10 @@ else
   if [[ -f "$TUNNEL_PID_FILE" ]] && kill -0 "$(cat "$TUNNEL_PID_FILE")" 2>/dev/null; then
     echo "ssh tunnel already running (pid $(cat "$TUNNEL_PID_FILE"))"
   else
-    pkill -f "ssh .*-N .*-L ${TUNNEL_PORT}:${ORIG_HOSTPORT}" 2>/dev/null || true
     rm -f -- "$TUNNEL_PID_FILE"
     nohup ssh ${SSH_OPTS:-} -N \
       -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
-      -o StrictHostKeyChecking=accept-new \
+      -o StrictHostKeyChecking=yes \
       -L "127.0.0.1:${TUNNEL_PORT}:${ORIG_HOSTPORT}" \
       "$HOST" >/tmp/kubeconfig-tunnel-${HOST}-${TUNNEL_PORT}.log 2>&1 &
     echo $! > "$TUNNEL_PID_FILE"
@@ -96,3 +96,4 @@ echo "  alias k=kubectl"
 if [[ "$MODE" == tunnel ]]; then
   echo "  (the ssh tunnel is managed by get-kubeconfig.sh; re-source it after reboots)"
 fi
+
