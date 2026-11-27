@@ -114,3 +114,57 @@ no data was lost.
 - `check_live_metrics` prints `METRIC ACCEPTANCE PASSED (not full workflow or
   semantic acceptance)` — metric acceptance is necessary but not the full
   research workflow.
+---
+
+## Post-acceptance correction pass (patch a55fe52, 2026-11-27)
+
+Tested revisions (report separately; this file is not its own SHA):
+- `cluster-repo` HEAD **`0a34e4c`** (patch `a55fe52` integrated + fixes).
+- `predictive-k8s-autoscaling` HEAD **`7d5d1f8`**.
+
+### P0 — one canonical cAdvisor owner
+- `alloy.yaml.j2`: kubelet scrape now `/metrics` (job `lab-kubelet`), **not**
+  `/metrics/cadvisor`; the legacy `prometheus.scrape.kubelet` cadvisor job is gone.
+- Standalone `cadvisor` DaemonSet (v0.49.1) flags verified against the image
+  `--help`: `--listen_ip=127.0.0.1`, `--allow_dynamic_housekeeping=false`,
+  `--max_housekeeping_interval=3s`, `--housekeeping_interval=3s`; loopback-only
+  (`127.0.0.1:8080`), readiness `host: 127.0.0.1`.
+- Live: only `integrations/cadvisor` emits `container_cpu_usage_seconds_total`
+  (690 series, single owner); `up{job="integrations/cadvisor"}`=6;
+  `absent(up{job="prometheus.scrape.kubelet"})`=1; `up{job="lab-kubelet"}`=6.
+- Source age (all Running containers, canonical job): CPU/mem/throttle/fs/blkio
+  **7–11 s** (≤15 s) on all 6 nodes; network is host-level (cadvisor) + per-flow
+  (Beyla). CPU/throttling recording rules scoped to `job="integrations/cadvisor"`.
+
+### P2 — independent HTTP/gRPC edge coverage (no circular exemptions)
+- `latency_exempt_edges` = 41 client→MySQL pairs, each verified **SQL** from the
+  server image (`mysql:5.7.34`) + port 3306 — not inferred from histogram absence.
+  Required active edges are never exempted (overlap check).
+- `check_live_metrics` `no_unexpected_missing_edges`: an active edge without p90
+  fails unless independently classified; **67 PASS** during a representative run.
+
+### P3 — k6 scenario + outcome accounting
+- `--scenario` selects the measurement (default `load`; bundled smoke `api`).
+- `check_k6_stream` PASS mid-run: `k6_lab_attempted_total=120`,
+  `k6_http_reqs_total=316` (1 attempt ≈ 2.6 HTTP requests, same scope); event
+  counters absent at 0 events = **unknown** (not measured zero), a present-but-old
+  event sample is valid (rare events), a disappearing observed counter fails.
+
+### P1 — readiness / controlled scaling / diagnostics
+- Controlled idle **1→2→1** on `ts-travel-service` (no HPA, no other writer):
+  decision 19:10:42Z, new pod Running 19:10:43Z, **Ready 19:17:59Z** (~7m16s
+  Spring Boot+MySQL), discoverable (EndpointSlice 2 addresses), telemetry-visible
+  (Beyla series), scale-in restored to 1 at 19:18:20Z. Root kubelet probe does not
+  hit Envoy RED; Beyla RED rate is empty when idle (p90 from sparse probe).
+- **Tempo**: correlated trace retrieved (`/api/traces/{id}` with k8s metadata).
+- **Pyroscope**: query API is ConnectRPC `querier.v1.QuerierService` (not REST);
+  `ProfileTypes`/`Series`/`SelectMergeStacktraces` with **millisecond** timestamps.
+  Retrieved a real CPU profile (`train-ticket/k8snacos`, total 1.02e12 ns,
+  JVM `JavaThread::thread_main_inner`/`JavaCalls::call_virtual`).
+- **Dashboards**: 11 dashboards use `integrations/cadvisor` (no old kubelet);
+  live queries during traffic return data (k8s CPU 125, mem 129, RED 47, SLO 1,
+  k6 1 series).
+
+### Reconciliation / idempotency
+- `postcluster --tags alloy` re-run → `changed=0`; `monitoring.yaml` re-run →
+  `changed=1` (firewall re-apply only, effect-idempotent).
