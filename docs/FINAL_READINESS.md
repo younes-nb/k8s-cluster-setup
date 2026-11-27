@@ -87,8 +87,10 @@ no data was lost.
 ## Phase 5 — idempotency + Grafana + scaling + functional
 
 - **Idempotency**: re-running `postcluster.yaml --tags alloy` → `changed=0`,
-  all collector rollouts `ok` (deployment/alloy, daemonsets alloy-node/
-  alloy-profile/cadvisor).
+  all collector rollouts `ok`. Re-running `monitoring.yaml` → `changed=1` (only
+  the ingress-firewall re-apply, idempotent in effect); data-dir mode aligned to
+  `0750` (the mode the images enforce) so the base-dir task no longer re-reports
+  changed.
 - **Grafana**: datasources (Mimir/Loki/Tempo) point at the monitoring host and
   are healthy; admin password from the encrypted vault (`GRAFANA_ADMIN_PASSWORD`).
 - **Scaling**: 1→2→1 replica scale test PASS (earlier in the session).

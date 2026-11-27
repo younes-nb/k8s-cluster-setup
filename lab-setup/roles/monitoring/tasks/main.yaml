@@ -115,15 +115,27 @@
     - "{{ monitoring_base_dir }}"
     - "{{ monitoring_base_dir }}/conf"
     - "{{ monitoring_base_dir }}/conf/grafana/provisioning/datasources"
+    - "{{ monitoring_base_dir }}/conf/rules/anonymous"
+    - "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards"
+    - "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards/json"
+  become: true
+
+# Data dirs are created 0750 to match the mode each image enforces on its bind
+# mount (mimir/loki/tempo/grafana chmod their data dir to 0750 at start). Using
+# 0755 here made this task report changed on every run (the image resets it to
+# 0750), so the playbook was not idempotent.
+- name: Create data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0750"
+  loop:
     - "{{ monitoring_data_dir }}/mimir"
     - "{{ monitoring_data_dir }}/loki"
     - "{{ monitoring_data_dir }}/tempo"
     - "{{ monitoring_data_dir }}/grafana"
     - "{{ monitoring_data_dir }}/alloy"
     - "{{ monitoring_data_dir }}/pyroscope"
-    - "{{ monitoring_base_dir }}/conf/rules/anonymous"
-    - "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards"
-    - "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards/json"
   become: true
 
 # Each image runs as a non-root UID, so the bind-mounted data dirs must be owned
