@@ -13,14 +13,25 @@ from check_live_metrics import make_query, finite_rows
 COUNTERS = ('k6_lab_attempted_total', 'k6_lab_good_total',
             'k6_lab_slow_success_total', 'k6_lab_failed_total',
             'k6_lab_timeout_total', 'k6_http_reqs_total')
+# Cumulative event counters legitimately have no load series at 0 events.
+EVENT_COUNTERS = {'k6_lab_slow_success_total', 'k6_lab_failed_total',
+                  'k6_lab_timeout_total'}
 
 
 def snapshot(query, experiment, max_age=15):
     result = {}
     for name in COUNTERS:
-        selector = name + '{experiment=' + json.dumps(experiment) + '}'
-        rows = finite_rows(query(selector))
-        ages = finite_rows(query('time()-timestamp(' + selector + ')'))
+        # The k6 setup() phase leaves a stale ::setup series; the measurement is
+        # the load scenario only.
+        selector = name + '{experiment=' + json.dumps(experiment) + ',scenario="load"}'
+        try:
+            rows = finite_rows(query(selector))
+            ages = finite_rows(query('time()-timestamp(' + selector + ')'))
+        except ValueError as exc:
+            if str(exc) == 'empty result' and name in EVENT_COUNTERS:
+                result[name] = {'total': 0, 'max_age_seconds': 0, 'series': 0}
+                continue
+            raise
         # Values and ages must refer to the same raw series. Never use the
         # API result evaluation timestamp as the source timestamp.
         def identity(labels):
