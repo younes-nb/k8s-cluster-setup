@@ -744,7 +744,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(node)(kube_pod_status_ready{namespace=\"train-ticket\",condition=\"true\"})",
+          "expr": "sum by(node)(kube_pod_status_ready{namespace=\"train-ticket\",condition=\"true\"} * on(namespace,pod,uid) group_left(node) kube_pod_info{namespace=\"train-ticket\"})",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -814,4 +814,3 @@
     }
   ]
 }
-

@@ -73,6 +73,7 @@ ctx.update(groups={"control_plane": ["master1", "master2", "master3"],
                    "nodes": ["master1", "master2", "master3",
                              "worker1", "worker2", "worker3", "loadgen"],
                    "load_generators": ["loadgen"]})
+ctx.update(mysql_name="fixture-mysql", mysql_namespace="train-ticket", mysql_database="fixture", mysql_user="fixture", mysql_password="fixture: \"!", mysql_root_password="fixture#root", mysql_storage="2Gi", mysql_image="mysql:5.7.34", mysql_pvc_name="mysqldata")
 env = jinja2.Environment(undefined=jinja2.StrictUndefined)
 env.filters["to_json"] = json.dumps
 
@@ -159,9 +160,12 @@ gone = [".vault.pass", "lab-setup/.vault.pass", "lab-setup/inventory/group_vars/
 # The check is about *tracked* secrets. Generated (gitignored) files such as the
 # kubeadm certificate key or a local .vault.pass may legitimately exist on a
 # runner; what must never happen is committing them.
-tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split()
-check(not any(g in tracked for g in gone),
-      "tracked secret files are absent")
+git_result = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True)
+if git_result.returncode == 0:
+    check(not any(g in git_result.stdout.split() for g in gone), "tracked secret files are absent")
+else:
+    print("SKIP tracked-secret check: no Git index available; checking archive paths only")
+    check(not any((ROOT/g).exists() for g in gone), "known credential paths absent in archive")
 
 print()
 if failures:

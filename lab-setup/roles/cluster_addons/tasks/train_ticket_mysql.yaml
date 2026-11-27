@@ -1,0 +1,63 @@
+---
+- name: Inspect existing StatefulSet
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: apps/v1
+    kind: StatefulSet
+    name: "{{ db.name }}"
+    namespace: "{{ tt_ns }}"
+  register: _db_sts
+- name: Inspect existing PVCs
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: PersistentVolumeClaim
+    namespace: "{{ tt_ns }}"
+  register: _db_pvcs
+- name: Inspect existing DB Secret
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ db.name }}-secret"
+    namespace: "{{ tt_ns }}"
+  register: _db_secret
+  no_log: true
+- name: Refuse implicit reinitialization or credential rotation
+  ansible.builtin.assert:
+    that:
+      - (_db_sts.resources | length > 0) or (_db_pvcs.resources | selectattr('metadata.name', 'search', '-' ~ db.name ~ '-[0-9]+$') | list | length == 0)
+      - (_db_sts.resources | length == 0) or (_db_secret.resources | length == 1)
+      - (_db_secret.resources | length == 0) or ((_db_secret.resources[0].data.MYSQL_PASSWORD | b64decode) == db.password and (_db_secret.resources[0].data.MYSQL_ROOT_PASSWORD | b64decode) == db.root_password)
+    fail_msg: Existing DB data or credentials require explicit operator reconciliation; never delete or regenerate automatically.
+  no_log: true
+- name: Use stable claim name on fresh installs and retain the exact existing claim on reruns
+  ansible.builtin.set_fact:
+    mysql_existing_claim: "{{ _db_sts.resources[0].spec.volumeClaimTemplates[0].metadata.name if _db_sts.resources | length else 'mysqldata' }}"
+    mysql_existing_storage: "{{ _db_sts.resources[0].spec.volumeClaimTemplates[0].spec.resources.requests.storage if _db_sts.resources | length else db.storage }}"
+- name: Refuse to replace an existing database with a missing or unbound claim
+  ansible.builtin.assert:
+    that:
+      - (_db_pvcs.resources | selectattr('metadata.name', 'equalto', mysql_existing_claim ~ '-' ~ db.name ~ '-0') | selectattr('status.phase', 'equalto', 'Bound') | list | length) == 1
+    fail_msg: Existing primary has no bound expected PVC. Investigate or restore from backup before continuing.
+  when: _db_sts.resources | length > 0
+- name: Apply standalone MySQL
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    template: standalone-mysql.yaml.j2
+  vars:
+    mysql_name: "{{ db.name }}"
+    mysql_namespace: "{{ tt_ns }}"
+    mysql_database: "{{ db.database }}"
+    mysql_user: "{{ db.user }}"
+    mysql_password: "{{ db.password }}"
+    mysql_root_password: "{{ db.root_password }}"
+    mysql_storage: "{{ mysql_existing_storage }}"
+    mysql_image: "{{ tt_mysql_image }}"
+    mysql_pvc_name: "{{ mysql_existing_claim }}"
+  no_log: true
+- name: Require DB rollout
+  ansible.builtin.command:
+    argv: [kubectl, "--kubeconfig={{ kubeconfig_path }}", -n, "{{ tt_ns }}", rollout, status, "statefulset/{{ db.name }}", --timeout=600s]
+  changed_when: false

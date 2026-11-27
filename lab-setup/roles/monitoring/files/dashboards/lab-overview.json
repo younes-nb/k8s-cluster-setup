@@ -346,7 +346,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "(up == bool 0)",
+          "expr": "(up == 0)",
           "legendFormat": "__auto",
           "range": true
         }
@@ -534,4 +534,3 @@
     }
   ]
 }
-

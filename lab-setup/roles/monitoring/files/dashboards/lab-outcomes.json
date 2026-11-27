@@ -187,7 +187,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "autoscaler:client_failure:ratio",
+          "expr": "autoscaler:client_failure:ratio{experiment=\"$experiment\"}",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -233,7 +233,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by(experiment)(rate(k6_lab_attempted_total[1m]))",
+          "expr": "sum by(experiment)(rate(k6_lab_attempted_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -243,7 +243,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by(experiment)(rate(k6_lab_good_total[1m]))",
+          "expr": "sum by(experiment)(rate(k6_lab_good_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -253,7 +253,7 @@
         },
         {
           "refId": "C",
-          "expr": "sum by(experiment)(rate(k6_lab_slow_success_total[1m]))",
+          "expr": "sum by(experiment)(rate(k6_lab_slow_success_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -263,7 +263,7 @@
         },
         {
           "refId": "D",
-          "expr": "sum by(experiment)(rate(k6_lab_failed_total[1m]))",
+          "expr": "sum by(experiment)(rate(k6_lab_failed_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -273,7 +273,7 @@
         },
         {
           "refId": "E",
-          "expr": "sum by(experiment)(rate(k6_lab_timeout_total[1m]))",
+          "expr": "sum by(experiment)(rate(k6_lab_timeout_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -285,8 +285,8 @@
     },
     {
       "id": 6,
-      "title": "Outstanding accounted client requests",
-      "description": "Counters reflect observed starts and terminal outcomes; interrupted processes and export loss can leave unmatched starts.",
+      "title": "Unresolved / accounting difference (negative = inconsistent)",
+      "description": "Unique run ID required. Includes active and interrupted requests; negative values indicate invalid accounting. Missing series remain missing.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -319,7 +319,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "autoscaler:client_outstanding:requests",
+          "expr": "autoscaler:client_outstanding:requests{experiment=\"$experiment\"}",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -365,7 +365,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(.90,sum by(experiment)(rate(k6_http_req_duration[1m])))",
+          "expr": "histogram_quantile(.90,sum by(experiment)(rate(k6_http_req_duration_seconds{experiment=\"$experiment\"}[1m])))",
           "legendFormat": "{{experiment}}",
           "datasource": {
             "type": "prometheus",
@@ -375,6 +375,22 @@
         }
       ]
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "experiment",
+        "label": "Experiment ID",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "lab-mimir"
+        },
+        "query": "label_values(k6_lab_attempted_total, experiment)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  }
 }
-

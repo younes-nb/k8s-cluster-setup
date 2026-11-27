@@ -70,9 +70,10 @@
 
 - name: Install self-contained acceptance workload
   ansible.builtin.copy:
-    src: smoke.js
-    dest: /opt/loadgen/smoke.js
+    src: "{{ item }}"
+    dest: "/opt/loadgen/{{ item }}"
     mode: '0644'
+  loop: [smoke.js, api-smoke.js]
 - name: Install k6 telemetry environment
   ansible.builtin.copy:
     dest: /opt/loadgen/k6.env

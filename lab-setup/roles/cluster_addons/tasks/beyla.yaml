@@ -14,7 +14,7 @@
   when: _beyla_cfg is changed
   changed_when: true
 
-- name: Wait for Beyla DaemonSet to be ready on all nodes
+- name: Wait for Beyla DaemonSet to be ready on all benchmark workers
   kubernetes.core.k8s_info:
     api_version: apps/v1
     kind: DaemonSet
@@ -24,7 +24,7 @@
   register: _beyla_ds
   until: >
     _beyla_ds.resources | length > 0 and
-    (_beyla_ds.resources[0].status.desiredNumberScheduled | default(0)) == 6 and
+    (_beyla_ds.resources[0].status.desiredNumberScheduled | default(0)) == (groups['workers'] | length) and
     (_beyla_ds.resources[0].status.numberReady | default(0)) ==
     _beyla_ds.resources[0].status.desiredNumberScheduled
   retries: 60

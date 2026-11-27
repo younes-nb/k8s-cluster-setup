@@ -156,14 +156,14 @@
     dest: "{{ monitoring_base_dir }}/conf/mimir.yaml"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
+  notify: restart monitoring mimir
 
 - name: Install recording rules
   ansible.builtin.template:
     src: autoscaler-rules.yaml.j2
     dest: "{{ monitoring_base_dir }}/conf/rules/anonymous/autoscaler.yaml"
     mode: "0644"
-  notify: restart monitoring stack
+  notify: restart monitoring mimir
 
 - name: Install protected Grafana Compose environment
   ansible.builtin.copy:
@@ -171,7 +171,7 @@
     content: "GRAFANA_ADMIN_PASSWORD={{ lookup('env','GRAFANA_ADMIN_PASSWORD') }}\n"
     mode: "0600"
   no_log: true
-  notify: restart monitoring stack
+  notify: restart monitoring grafana
 
 - name: Render Loki config
   ansible.builtin.template:
@@ -179,7 +179,7 @@
     dest: "{{ monitoring_base_dir }}/conf/loki.yaml"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
+  notify: restart monitoring loki
 
 - name: Render Tempo config
   ansible.builtin.template:
@@ -187,7 +187,7 @@
     dest: "{{ monitoring_base_dir }}/conf/tempo.yaml"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
+  notify: restart monitoring tempo
 
 - name: Render Grafana datasource provisioning
   ansible.builtin.template:
@@ -195,7 +195,7 @@
     dest: "{{ monitoring_base_dir }}/conf/grafana/provisioning/datasources/datasources.yaml"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
+  notify: restart monitoring grafana
 
 - name: Render the off-cluster Alloy gateway (OTLP + blackbox + host scrapes)
   ansible.builtin.template:
@@ -203,7 +203,7 @@
     dest: "{{ monitoring_base_dir }}/conf/alloy-gateway.alloy"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
+  notify: restart monitoring alloy-gateway
 
 - name: Provision the Grafana dashboard provider
   ansible.builtin.copy:
@@ -211,7 +211,7 @@
     dest: "{{ monitoring_base_dir }}/conf/grafana/provisioning/dashboards/lab.yaml"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
+  notify: restart monitoring grafana
 
 - name: Provision the Research Lab dashboards
   ansible.builtin.copy:
@@ -226,7 +226,6 @@
     dest: "{{ monitoring_base_dir }}/docker-compose.yml"
     mode: "0644"
   become: true
-  notify: restart monitoring stack
 
 - name: Install private ingress firewall script
   ansible.builtin.copy:

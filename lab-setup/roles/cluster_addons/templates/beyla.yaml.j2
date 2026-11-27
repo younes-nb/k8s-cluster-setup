@@ -71,6 +71,7 @@ spec:
         app: beyla
     spec:
       serviceAccountName: beyla
+      nodeSelector: {lab.example.com/worker: "true"}
       hostNetwork: true
       hostPID: true
       # hostNetwork pods must use ClusterFirstWithHostNet for cluster DNS

@@ -1,13 +1,5 @@
 ---
-# Standalone, Xenon-free MySQL for a Train Ticket quickstart component.
-# Replaces the RadonDB/Xenon chart, whose leader election fails on this cluster:
-# the xenon sidecar connects to "localhost" (IPv6 ::1) as root, but the image
-# only creates root@localhost / root@127.0.0.1, so every ping is denied and no
-# leader is ever labelled. A single primary with MYSQL_ROOT_HOST=% creates
-# root@'%' (matches ::1 and 127.0.0.1) and needs no leader election.
-#
-# Required vars: mysql_name, mysql_namespace, mysql_database, mysql_user,
-# mysql_password, mysql_root_password, mysql_storage, mysql_image.
+# Stable standalone primary; existing PVC identity is retained by the role.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -15,10 +7,10 @@ metadata:
   namespace: {{ mysql_namespace }}
 type: Opaque
 stringData:
-  MYSQL_ROOT_PASSWORD: "{{ mysql_root_password }}"
-  MYSQL_DATABASE: "{{ mysql_database }}"
-  MYSQL_USER: "{{ mysql_user }}"
-  MYSQL_PASSWORD: "{{ mysql_password }}"
+  MYSQL_ROOT_PASSWORD: {{ mysql_root_password | to_json }}
+  MYSQL_DATABASE: {{ mysql_database | to_json }}
+  MYSQL_USER: {{ mysql_user | to_json }}
+  MYSQL_PASSWORD: {{ mysql_password | to_json }}
 ---
 apiVersion: v1
 kind: Service
@@ -58,6 +50,8 @@ spec:
     metadata:
       labels: {app: {{ mysql_name }}}
     spec:
+      nodeSelector:
+        lab.example.com/worker: "true"
       containers:
         - name: mysql
           image: {{ mysql_image }}
@@ -73,9 +67,6 @@ spec:
             - --max-connections=1000
           envFrom:
             - secretRef: {name: {{ mysql_name }}-secret}
-          env:
-            - name: MYSQL_ROOT_HOST
-              value: "%"
           ports:
             - {name: mysql, containerPort: 3306}
           readinessProbe:

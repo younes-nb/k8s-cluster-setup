@@ -15,6 +15,7 @@ rules:
     verbs: [get, list, watch]
   - apiGroups: [apps]
     resources: [deployments/scale]
+    resourceNames: {{ tt_scalable_deployments | to_json }}
     verbs: [get, update, patch]
   - apiGroups: ['']
     resources: [pods, services, events, resourcequotas]

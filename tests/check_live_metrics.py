@@ -87,19 +87,28 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     t.values('gateway reachable','probe_success',lambda v:v==1)
     t.values('gateway active workload','sum(rate(envoy_cluster_upstream_rq_total[1m]))',lambda v:v>0)
     t.fresh('gateway request metrics fresh','envoy_cluster_upstream_rq_total',max_age)
+    for job in ('lab-etcd','lab-scheduler','lab-controller-manager'):
+        t.identities(job+' healthy', 'up{job='+json.dumps(job)+'}', 'instance', {'master1','master2','master3'}, lambda v:v==1)
+        t.fresh(job+' freshness', 'up{job='+json.dumps(job)+'}', max_age)
+    t.identities('both MySQL exporters healthy', 'mysql_up{job="lab-mysql"}', 'instance', {'nacosdb-mysql','ts-mysql'}, lambda v:v==1)
+    t.identities('required StatefulSets ready', 'kube_statefulset_status_replicas_ready'+filt, 'statefulset', {'nacosdb-mysql','ts-mysql','nacos'}, lambda v:v>=1)
+    t.values('StatefulSet desired equals ready', 'kube_statefulset_replicas'+filt+' - on(namespace,statefulset) kube_statefulset_status_replicas_ready'+filt, lambda v:v==0)
     services=contract['active_services']
-    t.identities('expected active Beyla services','autoscaler:service_requests:rate1m','service_name',services,lambda v:v>0)
-    t.identities('expected service P90 finite','autoscaler:service_latency:p90_seconds','service_name',services,lambda v:v>=0)
-    t.identities('expected service raw sample freshness','autoscaler:service_telemetry_age:seconds','service_name',services,lambda v:-2<=v<=max_age)
+    service_filter='{k8s_namespace_name='+ns+'}'
+    t.identities('expected active Beyla services','autoscaler:service_requests:rate1m'+service_filter,'service_name',services,lambda v:v>0)
+    t.identities('expected service P90 finite','autoscaler:service_latency:p90_seconds'+service_filter,'service_name',services,lambda v:v>=0)
+    t.identities('expected service raw sample freshness','autoscaler:service_telemetry_age:seconds'+service_filter,'service_name',services,lambda v:-2<=v<=max_age)
     edges={tuple(e) for e in contract['active_edges']}
     for suffix,pred in [('edge_requests:rate1m',lambda v:v>0),('edge_latency:p90_seconds',lambda v:v>=0),('edge_slo:violation',lambda v:v in (0,1))]:
         t.run(suffix,'autoscaler:'+suffix,lambda rows:edges <= {(m.get('client'),m.get('server')) for m,v in rows if pred(v)})
     t.fresh('raw edge counter freshness','traces_service_graph_request_total',max_age)
-    t.values('frontend valid PBScaler SLO observation','autoscaler:frontend_slo:violation',lambda v:v in (0,1))
+    t.values('frontend valid PBScaler SLO observation','autoscaler:frontend_slo:violation'+service_filter,lambda v:v in (0,1))
     for metric in ['k6_lab_attempted_total','k6_lab_good_total','k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total','k6_http_reqs_total']:
         sel=metric+'{experiment='+exp+'}'
         t.values('present '+metric,sel,lambda v:v>=0)
         t.fresh('fresh '+metric,sel,max_age)
+    t.values('k6 native histogram count', 'histogram_count(k6_http_req_duration_seconds{experiment='+exp+'})', lambda v:v>=0)
+    t.fresh('k6 histogram freshness', 'k6_http_req_duration_seconds{experiment='+exp+'}', max_age)
     t.values('k6 workload is active','sum(rate(k6_lab_attempted_total{experiment='+exp+'}[1m]))',lambda v:v>0)
     # Require the agent to enumerate deployment-specific feature metric names, not claim unknown signals available.
     for item in contract['extra_metrics']:

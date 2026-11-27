@@ -1,8 +1,24 @@
 ---
 - name: Require database monitoring credentials for research acceptance
   ansible.builtin.assert:
-    that: (not tt_db_monitoring_required | bool) or ((tt_mongodb_exporters | length + tt_mysql_exporters | length) > 0)
-    fail_msg: Configure least-privilege database exporter credentials for the exact pinned benchmark before research deployment.
+    that: (not tt_db_monitoring_required | bool) or ((tt_mysql_exporters.keys() | list | intersect(['nacosdb-mysql', 'ts-mysql']) | length) == 2)
+    fail_msg: Configure least-privilege MySQL exporters for both nacosdb-mysql and ts-mysql before research deployment.
+- name: Require public control-plane metrics trust bundles on every Kubernetes host
+  ansible.builtin.stat:
+    path: "/etc/kubernetes/metrics-ca/{{ item.1 }}.crt"
+  delegate_to: "{{ item.0 }}"
+  loop: "{{ (groups['control_plane'] + groups['workers']) | product(['scheduler', 'controller_manager']) | list }}"
+  register: metrics_trust
+- name: Fail closed if serving trust was not configured
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - item.stat.size | default(0) > 0
+    fail_msg: Provision the verified public CA bundles for local TLS metrics; see docs/PATCH_ACCEPTANCE.md.
+  loop: "{{ metrics_trust.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 - name: Initialize database exporter Secret values
   ansible.builtin.set_fact:
     db_monitor_env: {}

@@ -67,9 +67,9 @@
       coreDns:
         serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
       kubeControllerManager:
-        serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
+        serviceMonitor: {enabled: false} # node Alloy scrapes localhost with TLS
       kubeScheduler:
-        serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}
+        serviceMonitor: {enabled: false} # node Alloy scrapes localhost with TLS
       kubeEtcd: {enabled: false}
       kubeProxy:
         serviceMonitor: {enabled: true, interval: 5s, scrapeTimeout: 4s}

@@ -1,9 +1,26 @@
 ---
-- name: restart monitoring stack
+- name: restart monitoring mimir
   ansible.builtin.command:
-    cmd: docker compose up -d --force-recreate
+    cmd: docker compose up -d --no-deps --force-recreate mimir
     chdir: "{{ monitoring_base_dir }}"
   become: true
-  register: _compose_restart
-  changed_when: _compose_restart.rc == 0
-
+- name: restart monitoring loki
+  ansible.builtin.command:
+    cmd: docker compose up -d --no-deps --force-recreate loki
+    chdir: "{{ monitoring_base_dir }}"
+  become: true
+- name: restart monitoring tempo
+  ansible.builtin.command:
+    cmd: docker compose up -d --no-deps --force-recreate tempo
+    chdir: "{{ monitoring_base_dir }}"
+  become: true
+- name: restart monitoring grafana
+  ansible.builtin.command:
+    cmd: docker compose up -d --no-deps --force-recreate grafana
+    chdir: "{{ monitoring_base_dir }}"
+  become: true
+- name: restart monitoring alloy-gateway
+  ansible.builtin.command:
+    cmd: docker compose up -d --no-deps --force-recreate alloy-gateway
+    chdir: "{{ monitoring_base_dir }}"
+  become: true

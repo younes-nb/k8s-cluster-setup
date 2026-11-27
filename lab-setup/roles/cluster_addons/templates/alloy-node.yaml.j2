@@ -9,6 +9,8 @@ rules:
   - apiGroups: ['']
     resources: [pods]
     verbs: [get, list, watch]
+  - nonResourceURLs: ["/metrics"]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -60,6 +62,31 @@ data:
       scrape_timeout = "4s"
       forward_to = [prometheus.remote_write.remote.receiver]
     }
+    // These endpoints are deliberately bound to localhost by Kubespray.
+    // The operator must provision public CA bundles (not private keys) with
+    // certificates trusted for the 127.0.0.1 serving SAN on each master.
+    {% for component, port in [('scheduler',10259), ('controller_manager',10257)] %}
+    discovery.relabel "{{ component }}_local" {
+      targets = [{"__address__" = "127.0.0.1:{{ port }}", "instance" = sys.env("NODE_NAME"), "node" = sys.env("NODE_NAME")}]
+      rule {
+        source_labels = ["node"]
+        regex = "master[123]"
+        action = "keep"
+      }
+    }
+    prometheus.scrape "{{ component }}_local" {
+      targets = discovery.relabel.{{ component }}_local.output
+      job_name = "lab-{{ component | replace('_','-') }}"
+      scheme = "https"
+      scrape_interval = "5s"
+      scrape_timeout = "4s"
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      tls_config {
+        ca_file = "/metrics-ca/{{ component }}.crt"
+      }
+      forward_to = [prometheus.remote_write.remote.receiver]
+    }
+    {% endfor %}
     prometheus.exporter.self "node" {}
     discovery.relabel "self" {
       targets = prometheus.exporter.self.node.targets
@@ -155,6 +182,7 @@ spec:
             - {name: sys, mountPath: /host/sys, readOnly: true}
             - {name: logs, mountPath: /var/log/pods, readOnly: true}
             - {name: data, mountPath: /var/lib/alloy}
+            - {name: metrics-ca, mountPath: /metrics-ca, readOnly: true}
           securityContext: {runAsUser: 0, allowPrivilegeEscalation: false}
       volumes:
         - {name: conf, configMap: {name: alloy-node}}
@@ -163,4 +191,5 @@ spec:
         - {name: sys, hostPath: {path: /sys}}
         - {name: logs, hostPath: {path: /var/log/pods}}
         - {name: data, hostPath: {path: /var/lib/alloy-node, type: DirectoryOrCreate}}
+        - {name: metrics-ca, hostPath: {path: /etc/kubernetes/metrics-ca, type: DirectoryOrCreate}}
 

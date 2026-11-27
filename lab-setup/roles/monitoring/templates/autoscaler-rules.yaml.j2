@@ -28,7 +28,7 @@ groups:
   - record: autoscaler:client_failure:ratio
     expr: sum by(experiment)(rate(k6_lab_failed_total[1m])) / (sum by(experiment)(rate(k6_lab_attempted_total[1m])) > 0)
   - record: autoscaler:client_outstanding:requests
-    expr: clamp_min(sum by(experiment)(k6_lab_attempted_total) - (sum by(experiment)(k6_lab_good_total) + sum by(experiment)(k6_lab_slow_success_total) + sum by(experiment)(k6_lab_failed_total)), 0)
+    expr: sum by(experiment)(k6_lab_attempted_total) - (sum by(experiment)(k6_lab_good_total) + sum by(experiment)(k6_lab_slow_success_total) + sum by(experiment)(k6_lab_failed_total))
   - record: autoscaler:service_telemetry_age:seconds
     expr: max by(service_name,k8s_namespace_name)(time()-timestamp(http_server_request_duration_seconds_count))
 

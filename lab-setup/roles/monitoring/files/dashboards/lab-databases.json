@@ -15,7 +15,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "MongoDB exporter health",
+      "title": "MySQL running threads",
       "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
       "type": "timeseries",
       "datasource": {
@@ -49,7 +49,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "mongodb_up",
+          "expr": "mysql_global_status_threads_running",
           "legendFormat": "{{service_name}} {{instance}}",
           "datasource": {
             "type": "prometheus",
@@ -107,7 +107,7 @@
     },
     {
       "id": 3,
-      "title": "MongoDB connections",
+      "title": "MySQL aborted connections/s",
       "description": "Verify actual exported names and label values against pinned runtime and exporter versions; missing is not zero.",
       "type": "timeseries",
       "datasource": {
@@ -141,7 +141,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "mongodb_ss_connections{conn_type=\"current\"}",
+          "expr": "rate(mysql_global_status_aborted_connects[1m])",
           "legendFormat": "{{service_name}} {{instance}}",
           "datasource": {
             "type": "prometheus",
@@ -383,4 +383,3 @@
     }
   ]
 }
-

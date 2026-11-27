@@ -34,7 +34,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(k6_http_reqs_total[1m]))",
+          "expr": "sum(rate(k6_http_reqs_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "__auto",
           "range": true
         }
@@ -84,7 +84,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "k6_http_req_failed_rate",
+          "expr": "k6_http_req_failed_rate{experiment=\"$experiment\"}",
           "legendFormat": "__auto",
           "range": true
         }
@@ -134,19 +134,19 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.9,sum by(experiment)(rate(k6_http_req_duration[1m])))",
+          "expr": "histogram_quantile(0.9,sum by(experiment)(rate(k6_http_req_duration_seconds{experiment=\"$experiment\"}[1m])))",
           "legendFormat": "P90 {{experiment}}",
           "range": true
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95,sum by(experiment)(rate(k6_http_req_duration[1m])))",
+          "expr": "histogram_quantile(0.95,sum by(experiment)(rate(k6_http_req_duration_seconds{experiment=\"$experiment\"}[1m])))",
           "legendFormat": "P95 {{experiment}}",
           "range": true
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99,sum by(experiment)(rate(k6_http_req_duration[1m])))",
+          "expr": "histogram_quantile(0.99,sum by(experiment)(rate(k6_http_req_duration_seconds{experiment=\"$experiment\"}[1m])))",
           "legendFormat": "P99 {{experiment}}",
           "range": true
         }
@@ -196,13 +196,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "k6_vus",
+          "expr": "k6_vus{experiment=\"$experiment\"}",
           "legendFormat": "active",
           "range": true
         },
         {
           "refId": "B",
-          "expr": "k6_vus_max",
+          "expr": "k6_vus_max{experiment=\"$experiment\"}",
           "legendFormat": "max",
           "range": true
         }
@@ -252,7 +252,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(k6_dropped_iterations_total[1m]))",
+          "expr": "sum(rate(k6_dropped_iterations_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "__auto",
           "range": true
         }
@@ -302,31 +302,31 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(k6_lab_attempted_total[1m]))",
+          "expr": "sum(rate(k6_lab_attempted_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "attempted",
           "range": true
         },
         {
           "refId": "B",
-          "expr": "sum(rate(k6_lab_good_total[1m]))",
+          "expr": "sum(rate(k6_lab_good_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "good",
           "range": true
         },
         {
           "refId": "C",
-          "expr": "sum(rate(k6_lab_failed_total[1m]))",
+          "expr": "sum(rate(k6_lab_failed_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "failed",
           "range": true
         },
         {
           "refId": "D",
-          "expr": "sum(rate(k6_lab_slow_success_total[1m]))",
+          "expr": "sum(rate(k6_lab_slow_success_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "slow",
           "range": true
         },
         {
           "refId": "E",
-          "expr": "sum(rate(k6_lab_timeout_total[1m]))",
+          "expr": "sum(rate(k6_lab_timeout_total{experiment=\"$experiment\"}[1m]))",
           "legendFormat": "timeouts",
           "range": true
         }
@@ -476,6 +476,22 @@
       "includeVars": false,
       "keepTime": true
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "experiment",
+        "label": "Experiment ID",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "lab-mimir"
+        },
+        "query": "label_values(k6_lab_attempted_total, experiment)",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  }
 }
-

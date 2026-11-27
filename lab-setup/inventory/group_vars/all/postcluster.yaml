@@ -23,10 +23,8 @@ tt_repo_url: https://github.com/FudanSELab/train-ticket.git
 tt_repo_version: v1.0.0
 # Intended reference is the uploaded master snapshot, not the v1.0.0 tag.
 tt_repo_commit: 313886e99befb94be6cd45f085c98e0019f59829
-# Database topology: standalone-nacos (Nacos DB only) | standalone-all (Nacos + app).
-tt_db_topology: standalone-all
 tt_mysql_image: mysql:5.7.34
-tt_clone_dir: /tmp/train-ticket
+tt_clone_dir: /tmp/train-ticket-313886e
 tt_min_replicas: 1
 tt_max_replicas: 10
 tt_cpu_avg_utilization: 80
@@ -43,10 +41,12 @@ monitoring_tempo_port: 3200
 monitoring_grafana_port: 3000
 monitoring_data_dir: /var/lib/monitoring
 monitoring_disk_device: '{{ lookup(''env'', ''MONITORING_DISK_DEVICE'') }}'
-tq_pods: '400'
+# 46 x 10 + infrastructure + rollout headroom; admission ceiling, not capacity.
+tq_pods: '520'
 tq_count_deployments: '100'
 tq_count_replicasets: '400'
 tt_probe_overrides: {}
+tt_infra_probe_overrides: {}
 monitoring_allow_format: '{{ lookup(''env'', ''MONITORING_ALLOW_FORMAT'') | default(''false'',
   true) | bool }}'
 alloy_scrape_timeout: 4s
@@ -60,3 +60,52 @@ tt_mongodb_exporters: {}
 tt_mysql_exporters: {}
 tt_db_monitoring_required: true
 
+
+# Derived from pinned quickstart manifest; verify against rendered deployment names.
+tt_scalable_deployments:
+- ts-admin-basic-info-service
+- ts-admin-order-service
+- ts-admin-route-service
+- ts-admin-travel-service
+- ts-admin-user-service
+- ts-assurance-service
+- ts-auth-service
+- ts-avatar-service
+- ts-basic-service
+- ts-cancel-service
+- ts-config-service
+- ts-consign-price-service
+- ts-consign-service
+- ts-contacts-service
+- ts-delivery-service
+- ts-execute-service
+- ts-food-delivery-service
+- ts-food-service
+- ts-gateway-service
+- ts-inside-payment-service
+- ts-news-service
+- ts-notification-service
+- ts-order-other-service
+- ts-order-service
+- ts-payment-service
+- ts-preserve-other-service
+- ts-preserve-service
+- ts-price-service
+- ts-rebook-service
+- ts-route-plan-service
+- ts-route-service
+- ts-seat-service
+- ts-security-service
+- ts-station-food-service
+- ts-station-service
+- ts-ticket-office-service
+- ts-train-food-service
+- ts-train-service
+- ts-travel-plan-service
+- ts-travel-service
+- ts-travel2-service
+- ts-ui-dashboard
+- ts-user-service
+- ts-verification-code-service
+- ts-voucher-service
+- ts-wait-order-service

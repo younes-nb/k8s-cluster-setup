@@ -15,7 +15,10 @@ mkdir -p "$MNT"
 [[ -z "$(ls -A "$MNT")" ]] || { echo 'Refusing to hide existing files under mount'; exit 1; }
 FSTYPE=$(blkid -o value -s TYPE "$DEV" || true)
 if [[ -z "$FSTYPE" ]]; then
-  [[ "$ALLOW_FORMAT" == true && $(lsblk -nr -o NAME "$DEV" | wc -l) -eq 1 && -z "$(wipefs -n --noheadings -O TYPE "$DEV")" ]] || { echo 'Formatting not authorized or device has signatures/children'; exit 1; }
+  if ! signatures=$(wipefs -n --noheadings -O TYPE "$DEV"); then
+    echo "Disk signature inspection failed; refusing to format"; exit 1
+  fi
+  [[ "$ALLOW_FORMAT" == true && $(lsblk -nr -o NAME "$DEV" | wc -l) -eq 1 && -z "$signatures" ]] || { echo 'Formatting not authorized or device has signatures/children'; exit 1; }
   mkfs.ext4 -L monitoring "$DEV"; FSTYPE=ext4
 fi
 [[ "$FSTYPE" == ext4 || "$FSTYPE" == xfs ]] || { echo 'Unsupported data filesystem'; exit 1; }

@@ -80,12 +80,15 @@ def render(docs, overrides):
             for c in pod["containers"]:
                 key = f"{name}/{c['name']}"
                 if key in overrides:
-                    c["readinessProbe"] = overrides[key]["readinessProbe"]
+                    probe = overrides[key]["readinessProbe"]
+                    if not isinstance(probe, dict) or not any(k in probe for k in ("httpGet", "exec", "grpc", "tcpSocket")):
+                        raise ValueError(f"{key}: invalid readinessProbe")
+                    c["readinessProbe"] = probe
                     if "startupProbe" in overrides[key]:
                         c["startupProbe"] = overrides[key]["startupProbe"]
+                elif os.environ.get("TT_REQUIRE_VERIFIED_PROBES", "true").lower() == "true":
+                    raise ValueError(f"{key}: verified readinessProbe required even when upstream supplies a TCP probe; inspect pinned image and supply TT_PROBES")
                 elif "readinessProbe" not in c:
-                    if os.environ.get("TT_REQUIRE_VERIFIED_PROBES", "true").lower() == "true":
-                        raise ValueError(f"{key}: verified readinessProbe required; inspect pinned image and supply TT_PROBES")
                     ports = c.get("ports") or []
                     if not ports:
                         raise ValueError(
