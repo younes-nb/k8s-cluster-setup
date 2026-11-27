@@ -42,6 +42,8 @@ data:
   beyla-config.yml: |
     routes:
       unmatched: heuristic
+      ignored_patterns: {{ beyla_ignored_probe_paths | to_json }}
+      ignore_mode: all
     discovery:
       instrument:
         - k8s_namespace: {{ tt_ns }}

@@ -43,11 +43,12 @@
       - tt_require_verified_probes | bool
       - tt_probe_overrides | length > 0
       - tt_infra_probe_overrides | length == 2
+      - "'rabbitmq_prometheus' in tt_rabbitmq_enabled_plugins"
       - vault_nacos_db_password | default('') | length > 0
       - vault_nacos_root_password | default('') | length > 0
       - vault_ts_db_password | default('') | length > 0
       - vault_ts_root_password | default('') | length > 0
-    fail_msg: Inspect pinned images and supply verified probes and stable encrypted passwords before deployment.
+    fail_msg: Inspect pinned images and supply verified probes, the complete RabbitMQ plugin list including rabbitmq_prometheus, and stable encrypted passwords before deployment.
   no_log: true
 
 - name: Refuse to reconcile benchmark during active native HPA operation
@@ -87,6 +88,7 @@
     TT_PROBES: "{{ tt_probe_overrides | to_json }}"
     TT_INFRA_PROBES: "{{ tt_infra_probe_overrides | to_json }}"
     TT_REQUIRE_VERIFIED_PROBES: 'true'
+    TT_RABBITMQ_ENABLED_PLUGINS: "{{ tt_rabbitmq_enabled_plugins | to_json }}"
   register: _tt_render
   changed_when: false
 

@@ -9,6 +9,8 @@
   tags: [train-ticket]
 - import_tasks: gateway.yaml
   tags: [gateway]
+- import_tasks: metrics_certs.yaml
+  tags: [metrics-certs, alloy]
 - import_tasks: alloy.yaml
   tags: [alloy]
 - import_tasks: beyla.yaml

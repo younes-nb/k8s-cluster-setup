@@ -380,6 +380,276 @@
           "range": true
         }
       ]
+    },
+    {
+      "id": 9,
+      "title": "Nacos scrape health (each member)",
+      "description": "Validate actual metric and dimensions against the installed image; absent is not zero. Scrape health is not application health.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 64
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"lab-nacos\"}",
+          "legendFormat": "{{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "RabbitMQ scrape health",
+      "description": "Validate actual metric and dimensions against the installed image; absent is not zero. Scrape health is not application health.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 64
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"lab-rabbitmq\"}",
+          "legendFormat": "{{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "RabbitMQ ready messages",
+      "description": "Validate actual metric and dimensions against the installed image; absent is not zero. Scrape health is not application health.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 72
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_queue_messages_ready{job=\"lab-rabbitmq\"}",
+          "legendFormat": "{{pod}} {{queue}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "RabbitMQ unacknowledged messages",
+      "description": "Validate actual metric and dimensions against the installed image; absent is not zero. Scrape health is not application health.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 72
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_queue_messages_unacked{job=\"lab-rabbitmq\"}",
+          "legendFormat": "{{pod}} {{queue}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "RabbitMQ consumers",
+      "description": "Validate actual metric and dimensions against the installed image; absent is not zero. Scrape health is not application health.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_consumers{job=\"lab-rabbitmq\"}",
+          "legendFormat": "{{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "RabbitMQ connections",
+      "description": "Validate actual metric and dimensions against the installed image; absent is not zero. Scrape health is not application health.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_connections{job=\"lab-rabbitmq\"}",
+          "legendFormat": "{{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "lab-mimir"
+          }
+        }
+      ]
     }
   ]
 }

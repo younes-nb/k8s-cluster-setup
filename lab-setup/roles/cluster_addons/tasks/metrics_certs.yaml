@@ -1,0 +1,38 @@
+---
+# The parent play runs on master1. include_tasks loops serially over masters.
+- name: Reconcile local metrics serving PKI one master at a time
+  ansible.builtin.include_tasks:
+    file: metrics_certs_master.yaml
+    apply:
+      tags: [metrics-certs, alloy]
+  loop: "{{ groups['control_plane'] }}"
+  loop_control:
+    loop_var: metrics_master
+  tags: [metrics-certs, alloy]
+
+# Workers have no local scheduler/controller-manager targets. They still need
+# readable public bundles because the single node collector mounts this path.
+- name: Read public trust bundles from first master only
+  ansible.builtin.slurp:
+    src: "/etc/kubernetes/metrics-ca/{{ item }}.crt"
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  loop: [scheduler, controller_manager]
+  register: metrics_public
+
+- name: Ensure worker metrics trust directories exist
+  ansible.builtin.file:
+    path: /etc/kubernetes/metrics-ca
+    state: directory
+    mode: '0755'
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['workers'] }}"
+
+- name: Distribute only public trust to workers
+  ansible.builtin.copy:
+    content: "{{ item.1.content | b64decode }}"
+    dest: "/etc/kubernetes/metrics-ca/{{ item.1.item }}.crt"
+    mode: '0644'
+  delegate_to: "{{ item.0 }}"
+  loop: "{{ groups['workers'] | product(metrics_public.results) | list }}"
+  loop_control:
+    label: "{{ item.0 }} {{ item.1.item }}"

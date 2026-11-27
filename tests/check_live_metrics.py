@@ -45,6 +45,8 @@ class Validation:
         self.run(label, expr, lambda rows: all(pred(v) for _,v in rows))
     def identities(self, label, expr, key, expected, pred=lambda v: True):
         self.run(label, expr, lambda rows: set(expected) <= {m.get(key) for m,v in rows if pred(v)} and all(pred(v) for m,v in rows if m.get(key) in expected))
+    def exact_identities(self, label, expr, key, expected, pred=lambda v: True):
+        self.run(label, expr, lambda rows: {m.get(key) for m,v in rows} == set(expected) and len(rows) == len(expected) and all(pred(v) for _,v in rows))
     def fresh(self, label, selector, max_age):
         self.values(label, f'time() - timestamp({selector})', lambda v: -2 <= v <= max_age)
 
@@ -88,9 +90,14 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     t.values('gateway active workload','sum(rate(envoy_cluster_upstream_rq_total[1m]))',lambda v:v>0)
     t.fresh('gateway request metrics fresh','envoy_cluster_upstream_rq_total',max_age)
     for job in ('lab-etcd','lab-scheduler','lab-controller-manager'):
-        t.identities(job+' healthy', 'up{job='+json.dumps(job)+'}', 'instance', {'master1','master2','master3'}, lambda v:v==1)
+        t.exact_identities(job+' healthy', 'up{job='+json.dumps(job)+'}', 'instance', {'master1','master2','master3'}, lambda v:v==1)
         t.fresh(job+' freshness', 'up{job='+json.dumps(job)+'}', max_age)
-    t.identities('both MySQL exporters healthy', 'mysql_up{job="lab-mysql"}', 'instance', {'nacosdb-mysql','ts-mysql'}, lambda v:v==1)
+    t.exact_identities('both MySQL exporters healthy', 'mysql_up{job="lab-mysql"}', 'instance', {'nacosdb-mysql','ts-mysql'}, lambda v:v==1)
+    t.fresh('both MySQL exporters fresh', 'mysql_up{job="lab-mysql"}', 35)
+    for job, expected in [('lab-nacos', {'nacos-0','nacos-1','nacos-2'}), ('lab-rabbitmq', set(contract['rabbitmq_pods']))]:
+        selector = 'up{job='+json.dumps(job)+',namespace='+ns+'}'
+        t.exact_identities(job+' healthy', selector, 'pod', expected, lambda v:v==1)
+        t.exact_identities(job+' freshness', 'time()-timestamp('+selector+')', 'pod', expected, lambda v:-2<=v<=35)
     t.identities('required StatefulSets ready', 'kube_statefulset_status_replicas_ready'+filt, 'statefulset', {'nacosdb-mysql','ts-mysql','nacos'}, lambda v:v>=1)
     t.values('StatefulSet desired equals ready', 'kube_statefulset_replicas'+filt+' - on(namespace,statefulset) kube_statefulset_status_replicas_ready'+filt, lambda v:v==0)
     services=contract['active_services']
@@ -112,7 +119,11 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     t.values('k6 workload is active','sum(rate(k6_lab_attempted_total{experiment='+exp+'}[1m]))',lambda v:v>0)
     # Require the agent to enumerate deployment-specific feature metric names, not claim unknown signals available.
     for item in contract['extra_metrics']:
-        t.values(item['name'],item['query'],lambda v:v>=0)
+        if 'equals' in item:
+            pred = lambda v: v == item['equals']
+        else:
+            pred = lambda v: item.get('min', 0) <= v <= item.get('max', math.inf)
+        t.values(item['name'],item['query'],pred)
         if item.get('fresh_selector'):
             t.fresh(item['name']+' freshness',item['fresh_selector'],item.get('max_age',max_age))
     return t.failures
@@ -129,7 +140,7 @@ def main():
     if not 0<a.max_age<=15:
         p.error('online metric freshness must be at most 15 seconds')
     c=json.loads(pathlib.Path(a.contract).read_text())
-    if any(not c.get(k) for k in ('deployments','active_services','active_edges','extra_metrics')):
+    if any(not c.get(k) for k in ('deployments','active_services','active_edges','extra_metrics','rabbitmq_pods')):
         p.error('all contract groups must be nonempty; obtain independent expected identities before testing')
     failed=validate(make_query(a.mimir),c,a.namespace,a.max_age,a.experiment)
     print('FAILED: '+', '.join(failed) if failed else 'METRIC ACCEPTANCE PASSED (not full workflow or semantic acceptance)')

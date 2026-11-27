@@ -1,0 +1,40 @@
+---
+- name: Check API readiness before touching a master
+  ansible.builtin.command:
+    argv: [kubectl, "--kubeconfig={{ kubeconfig_path }}", get, --raw=/readyz]
+  changed_when: false
+
+- name: Ensure certificate helper dependencies
+  ansible.builtin.apt:
+    name: [openssl, python3-yaml]
+    state: present
+  delegate_to: "{{ metrics_master }}"
+
+- name: Stage local certificate helper
+  ansible.builtin.copy:
+    src: provision_metrics_certs.py
+    dest: /usr/local/sbin/lab-provision-metrics-certs.py
+    mode: '0700'
+  delegate_to: "{{ metrics_master }}"
+
+- name: Adopt or initialize trusted serving certificates without rotation
+  ansible.builtin.command:
+    argv: [python3, /usr/local/sbin/lab-provision-metrics-certs.py]
+  delegate_to: "{{ metrics_master }}"
+  register: metrics_cert_result
+  changed_when: metrics_cert_result.stdout == 'CHANGED'
+
+- name: Wait for API readiness after this master
+  ansible.builtin.command:
+    argv: [kubectl, "--kubeconfig={{ kubeconfig_path }}", get, --raw=/readyz]
+  register: metrics_api_ready
+  until: metrics_api_ready.rc == 0
+  retries: 30
+  delay: 5
+  changed_when: false
+
+- name: Verify scheduler and controller-manager mirror Pods are Ready
+  ansible.builtin.command:
+    argv: [kubectl, "--kubeconfig={{ kubeconfig_path }}", -n, kube-system, wait, --for=condition=Ready, "pod/{{ item }}-{{ metrics_master }}", --timeout=180s]
+  loop: [kube-scheduler, kube-controller-manager]
+  changed_when: false

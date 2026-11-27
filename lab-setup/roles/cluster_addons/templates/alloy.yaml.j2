@@ -91,6 +91,44 @@ data:
     // `sum()` queries double-counted — e.g. cluster CPU capacity read 480 cores
     // instead of 240 (2026-11-19). Delete one of the two; keep the ServiceMonitor.
 
+    // Scrape each infrastructure Pod, never a load-balanced Service address.
+    discovery.kubernetes "benchmark_infra" {
+      role = "pod"
+      namespaces {
+        names = ["{{ tt_ns }}"]
+      }
+    }
+    {% for app, port, path in [('nacos','client','/nacos/actuator/prometheus'), ('rabbitmq','prometheus','/metrics')] %}
+    discovery.relabel "{{ app }}_metrics" {
+      targets = discovery.kubernetes.benchmark_infra.targets
+      rule {
+        source_labels = ["__meta_kubernetes_pod_label_app", "__meta_kubernetes_pod_container_port_name", "__meta_kubernetes_pod_phase"]
+        regex = "{{ app }};{{ port }};Running"
+        action = "keep"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label = "instance"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label = "namespace"
+      }
+    }
+    prometheus.scrape "{{ app }}_metrics" {
+      targets = discovery.relabel.{{ app }}_metrics.output
+      job_name = "lab-{{ app }}"
+      metrics_path = "{{ path }}"
+      scrape_interval = "15s"
+      scrape_timeout = "4s"
+      forward_to = [prometheus.remote_write.mimir.receiver]
+    }
+    {% endfor %}
+
     prometheus.exporter.self "cluster" {}
     prometheus.scrape "self" {
       targets = prometheus.exporter.self.cluster.targets

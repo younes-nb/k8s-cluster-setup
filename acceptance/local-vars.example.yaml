@@ -17,3 +17,7 @@ tt_db_monitoring_required: true
 # Infrastructure readiness overrides must be independently verified.
 tt_infra_probe_overrides: {} # keys nacos, rabbitmq; readinessProbe/startupProbe
 # tt_mysql_exporters must cover nacosdb-mysql and ts-mysql.
+
+# Inspect rabbitmq-plugins list -e -m on the deployed image; preserve enabled plugins.
+# Verify rabbitmq_prometheus exists and supports the metrics port before enabling.
+# tt_rabbitmq_enabled_plugins: [rabbitmq_management, rabbitmq_prometheus]

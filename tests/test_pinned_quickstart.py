@@ -26,14 +26,20 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         out = pathlib.Path(tmp)
         try:
-            mod.prepare(a.train_ticket, out, renderer, {})
+            mod.prepare(a.train_ticket, out, renderer, {}, ["rabbitmq_prometheus"])
         except ValueError:
             pass
         else:
             raise AssertionError('unverified upstream TCP probes accepted')
-        first = mod.prepare(a.train_ticket, out, renderer, fixture)
+        try:
+            mod.prepare(a.train_ticket, out, renderer, fixture, ["rabbitmq_management"])
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('missing verified Prometheus plugin accepted')
+        first = mod.prepare(a.train_ticket, out, renderer, fixture, ["rabbitmq_management", "rabbitmq_prometheus"])
         before = {f.relative_to(out): f.read_bytes() for f in out.rglob('*') if f.is_file()}
-        assert mod.prepare(a.train_ticket, out, renderer, fixture) == first
+        assert mod.prepare(a.train_ticket, out, renderer, fixture, ["rabbitmq_management", "rabbitmq_prometheus"]) == first
         after = {f.relative_to(out): f.read_bytes() for f in out.rglob('*') if f.is_file()}
         assert before == after, 'rendering is not deterministic'
         assert len(first['deployments']) == 46 and len(first['db_secrets']) == 27
@@ -46,7 +52,10 @@ def main():
             assert service['spec'].get('type', 'ClusterIP') == 'ClusterIP'
             assert all('nodePort' not in p for p in service['spec']['ports'])
         assert 'publishNotReadyAddresses: true' in (out/'nacos/templates/service.yaml').read_text()
-        assert 'podManagementPolicy: Parallel' in (out/'nacos/templates/statefulset.yaml').read_text()
+        assert 'podManagementPolicy: OrderedReady' in (out/'nacos/templates/statefulset.yaml').read_text()
+        assert 'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE' in (out/'nacos/templates/statefulset.yaml').read_text()
+        assert 'rabbitmq_management,rabbitmq_prometheus' in (out/'rabbitmq/templates/metrics-plugins.yaml').read_text()
+        assert 'containerPort: 15692' in (out/'rabbitmq/templates/deployment.yaml').read_text()
         tasks = (ADDONS/'tasks/train_ticket.yaml').read_text()
         assert 'prepare_train_ticket.py' in tasks and '-rendered/{{ item }}' in tasks
         assert '/tmp/opencode' not in tasks and 'state: absent' not in tasks and 'delete pod' not in tasks

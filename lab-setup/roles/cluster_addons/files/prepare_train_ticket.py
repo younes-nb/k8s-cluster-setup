@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import shutil
+import re
 import yaml
 
 
@@ -17,7 +18,9 @@ def replace_once(path, old, new):
     path.write_text(text.replace(old, new, 1))
 
 
-def prepare(source, out, renderer, probes):
+def prepare(source, out, renderer, probes, rabbitmq_plugins=None):
+    if not isinstance(rabbitmq_plugins, list) or not all(isinstance(x, str) and re.fullmatch(r"[a-z][a-z0-9_]*", x) for x in rabbitmq_plugins) or "rabbitmq_prometheus" not in rabbitmq_plugins:
+        raise ValueError("Supply the verified complete RabbitMQ enabled plugin list including rabbitmq_prometheus")
     spec = importlib.util.spec_from_file_location('renderer', renderer)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -48,12 +51,19 @@ def prepare(source, out, renderer, probes):
         replace_once(f, old, new)
     replace_once(nacos/'service.yaml', '  clusterIP: None', '  clusterIP: None\n  publishNotReadyAddresses: true')
     replace_once(nacos/'service.yaml', '      name: rpc\n      targetPort: 7848', '      name: rpc\n      targetPort: 7848\n    - {name: client-rpc, port: 9848, targetPort: 9848}\n    - {name: raft-rpc, port: 9849, targetPort: 9849}')
-    # Parallel avoids OrderedReady init quorum deadlock on FRESH installs, but the
-    # podManagementPolicy of an existing StatefulSet is immutable. Preserve
-    # OrderedReady for existing installs (per-pod readiness is non-quorum, so no
-    # deadlock); only switch to Parallel when explicitly requested for a fresh one.
-    if os.environ.get('TT_NACOS_PARALLEL', '0') == '1':
-        replace_once(nacos/'statefulset.yaml', 'podManagementPolicy: OrderedReady', 'podManagementPolicy: Parallel')
+    # Preserve the deployed OrderedReady policy. Fresh bootstrap must be
+    # tested; changing the immutable field on an existing StatefulSet is unsafe.
+    if 'podManagementPolicy: OrderedReady' not in (nacos/'statefulset.yaml').read_text():
+        raise ValueError('Review Nacos podManagementPolicy before deployment')
+    replace_once(nacos/'statefulset.yaml', '            - name: MODE\n', '            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE\n              value: "health,prometheus"\n            - name: MODE\n')
+    rabbit = out/'rabbitmq/templates'
+    plugin_file = 'enabled_plugins: |\n    [' + ','.join(sorted(set(rabbitmq_plugins))) + '].\n'
+    (rabbit/'metrics-plugins.yaml').write_text('apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {{ .Release.Name }}-metrics-plugins\n  namespace: {{ .Release.Namespace }}\ndata:\n  ' + plugin_file)
+    replace_once(rabbit/'deployment.yaml', '        - name: rabbitmq\n', '        - name: rabbitmq\n          env:\n            - name: RABBITMQ_ENABLED_PLUGINS_FILE\n              value: /etc/rabbitmq/lab-plugins/enabled_plugins\n          volumeMounts:\n            - name: lab-metrics-plugins\n              mountPath: /etc/rabbitmq/lab-plugins\n              readOnly: true\n')
+    replace_once(rabbit/'deployment.yaml', '      containers:\n', '      volumes:\n        - name: lab-metrics-plugins\n          configMap:\n            name: {{ .Release.Name }}-metrics-plugins\n      containers:\n')
+    replace_once(rabbit/'deployment.yaml', '            - containerPort: {{ .Values.rabbitmq.serverPort }}', '            - containerPort: {{ .Values.rabbitmq.serverPort }}\n              name: amqp\n            - containerPort: 15692\n              name: prometheus')
+    # Changing the plugin list must recreate the Pod (not just update the mounted file).
+    replace_once(rabbit/'deployment.yaml', '      labels:\n        app: {{ .Release.Name }}', '      labels:\n        app: {{ .Release.Name }}\n      annotations:\n        checksum/lab-metrics-plugins: {{ include (print $.Template.BasePath "/metrics-plugins.yaml") . | sha256sum }}')
     for name, file, container in [('nacos','statefulset.yaml','k8snacos'), ('rabbitmq','deployment.yaml','rabbitmq')]:
         f = out/name/'templates'/file
         if name not in probes:
@@ -79,4 +89,4 @@ if __name__ == '__main__':
     a = ap.parse_args()
     probes = json.loads(os.environ['TT_PROBES'])
     probes.update(json.loads(os.environ['TT_INFRA_PROBES']))
-    print(json.dumps(prepare(a.source, a.out, a.renderer, probes)))
+    print(json.dumps(prepare(a.source, a.out, a.renderer, probes, json.loads(os.environ["TT_RABBITMQ_ENABLED_PLUGINS"]))))

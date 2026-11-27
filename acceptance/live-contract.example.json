@@ -1,11 +1,47 @@
 {
-  "deployments": ["REPLACE_WITH_ALL_EXPECTED_PINNED_BENCHMARK_DEPLOYMENTS"],
-  "active_services": ["REPLACE_WITH_INDEPENDENTLY_EXPECTED_ACTIVE_SERVICES"],
-  "active_edges": [["REPLACE_CLIENT", "REPLACE_SERVER"]],
+  "deployments": [
+    "REPLACE_WITH_ALL_EXPECTED_PINNED_BENCHMARK_DEPLOYMENTS"
+  ],
+  "active_services": [
+    "REPLACE_WITH_INDEPENDENTLY_EXPECTED_ACTIVE_SERVICES"
+  ],
+  "active_edges": [
+    [
+      "REPLACE_CLIENT",
+      "REPLACE_SERVER"
+    ]
+  ],
   "extra_metrics": [
-    {"name": "etcd metrics all three members", "query": "count(count by(instance)(etcd_disk_wal_fsync_duration_seconds_count)) == 3", "fresh_selector": "etcd_disk_wal_fsync_duration_seconds_count"},
-    {"name": "Kubernetes API requests", "query": "sum(rate(apiserver_request_total[1m]))", "fresh_selector": "apiserver_request_total"},
-    {"name": "Beyla network bytes", "query": "sum(rate(beyla_network_flow_bytes_total[1m]))", "fresh_selector": "beyla_network_flow_bytes_total"}
+    {
+      "name": "etcd metrics all three members",
+      "query": "count(count by(instance)(etcd_disk_wal_fsync_duration_seconds_count))",
+      "fresh_selector": "etcd_disk_wal_fsync_duration_seconds_count",
+      "equals": 3
+    },
+    {
+      "name": "Kubernetes API requests",
+      "query": "sum(rate(apiserver_request_total[1m]))",
+      "fresh_selector": "apiserver_request_total"
+    },
+    {
+      "name": "Beyla network bytes",
+      "query": "sum(rate(beyla_network_flow_bytes_total[1m]))",
+      "fresh_selector": "beyla_network_flow_bytes_total"
+    },
+    {
+      "name": "RabbitMQ queue-ready metric",
+      "query": "rabbitmq_queue_messages_ready{job=\"lab-rabbitmq\"}",
+      "fresh_selector": "rabbitmq_queue_messages_ready{job=\"lab-rabbitmq\"}",
+      "max_age": 35
+    },
+    {
+      "name": "Nacos functional metric (replace selector with verified metric, not up)",
+      "query": "REPLACE_WITH_VERIFIED_NACOS_FUNCTIONAL_METRIC",
+      "fresh_selector": "REPLACE_WITH_VERIFIED_NACOS_FUNCTIONAL_METRIC",
+      "max_age": 35
+    }
+  ],
+  "rabbitmq_pods": [
+    "REPLACE_WITH_CURRENT_RABBITMQ_POD_FROM_KUBERNETES_API"
   ]
 }
-
