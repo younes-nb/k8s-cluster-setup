@@ -51,6 +51,22 @@ class Validation:
         self.run(label, expr, lambda rows: set(expected) <= {(m.get("client"), m.get("server")) for m,v in rows if pred(v)} and all(pred(v) for _,v in rows) and len(rows)==len({(m.get("client"),m.get("server")) for m,v in rows}))
     def fresh(self, label, selector, max_age):
         self.values(label, f'time() - timestamp({selector})', lambda v: -2 <= v <= max_age)
+    def fresh_or_absent(self, label, selector, max_age):
+        # Event counters (slow/failed/timeout) have no load series when 0 events
+        # occur; that is the healthy state, not a telemetry gap. Fail only if a
+        # present series is stale.
+        try:
+            rows = finite_rows(self.query(f'time() - timestamp({selector})'))
+        except ValueError as exc:
+            if str(exc) == 'empty result':
+                print('PASS', label, '(0 events)')
+                return
+            raise
+        if not all(-2 <= v <= max_age for _, v in rows):
+            self.failures.append(label)
+            print('FAIL', label, 'stale: ' + repr(rows[:4]))
+        else:
+            print('PASS', label, f'({len(rows)} series)')
 
 
 def make_query(base):
@@ -144,9 +160,16 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     for metric in ['k6_lab_attempted_total','k6_lab_good_total','k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total','k6_http_reqs_total']:
         sel=metric+'{experiment='+exp+'}'
         t.values('present '+metric,sel,lambda v:v>=0)
-        t.fresh('fresh '+metric,sel,max_age)
-    t.values('k6 native histogram count', 'histogram_count(k6_http_req_duration_seconds{experiment='+exp+'})', lambda v:v>=0)
-    t.fresh('k6 histogram freshness', 'k6_http_req_duration_seconds{experiment='+exp+'}', max_age)
+        # The k6 setup() phase (broker login) leaves a stale ::setup series; the
+        # measurement freshness is the load scenario only. Event counters
+        # (slow/failed/timeout) legitimately have no load series at 0 events.
+        load_sel=metric+'{experiment='+exp+',scenario="load"}'
+        if metric in ('k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total'):
+            t.fresh_or_absent('fresh '+metric,load_sel,max_age)
+        else:
+            t.fresh('fresh '+metric,load_sel,max_age)
+    t.values('k6 native histogram count', 'histogram_count(k6_http_req_duration_seconds{experiment='+exp+',scenario="load"})', lambda v:v>=0)
+    t.fresh('k6 histogram freshness', 'k6_http_req_duration_seconds{experiment='+exp+',scenario="load"}', max_age)
     t.values('k6 workload is active','sum(rate(k6_lab_attempted_total{experiment='+exp+'}[1m]))',lambda v:v>0)
     # Require the agent to enumerate deployment-specific feature metric names, not claim unknown signals available.
     for item in contract['extra_metrics']:
@@ -156,7 +179,13 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
             pred = lambda v: item.get('min', 0) <= v <= item.get('max', math.inf)
         t.values(item['name'],item['query'],pred)
         if item.get('fresh_selector'):
-            t.fresh(item['name']+' freshness',item['fresh_selector'],item.get('max_age',max_age))
+            if item.get('fresh_max'):
+                # Some sources (Beyla network flows) keep ended-flow series around;
+                # requiring every historical flow to be fresh is wrong. Assert the
+                # freshest series is within the 15 s gate instead (min age).
+                t.values(item['name']+' freshness','min(time()-timestamp('+item['fresh_selector']+'))',lambda v: -2<=v<=item.get('max_age',max_age))
+            else:
+                t.fresh(item['name']+' freshness',item['fresh_selector'],item.get('max_age',max_age))
     return t.failures
 
 
