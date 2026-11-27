@@ -25,5 +25,13 @@ class NegativeTests(unittest.TestCase):
         rows=[{'metric':{'pod':p},'value':[0,'1']} for p in ('nacos-0','nacos-1')]
         t=Validation(lambda _:rows); t.exact_identities('unexpected','x','pod',{'nacos-0'},lambda v:v==1)
         self.assertTrue(t.failures)
+    def test_missing_expected_edge_fails(self):
+        t=Validation(lambda _:[{'metric':{'client':'a','server':'b'},'value':[0,'1']}])
+        t.expected_edges('edges','x',{('a','b'),('b','c')},lambda v:v>=0)
+        self.assertTrue(t.failures)
+    def test_nonfinite_edge_fails(self):
+        t=Validation(lambda _:[{'metric':{'client':'a','server':'b'},'value':[0,'NaN']}])
+        t.expected_edges('edges','x',{('a','b')},lambda v:v>=0)
+        self.assertTrue(t.failures)
 if __name__=='__main__': unittest.main()
 

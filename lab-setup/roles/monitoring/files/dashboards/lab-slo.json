@@ -426,7 +426,66 @@
           "range": true
         }
       ]
+    },
+    {
+      "id": 10,
+      "title": "Active edges missing valid client latency",
+      "description": "Positive edge demand with missing/invalid latency; no data alone is not proof of coverage.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:edge_latency:missing",
+          "legendFormat": "{{client}} \u2192 {{server}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Client latency source age",
+      "description": "Age of contributing +Inf bucket samples, not ruler timestamp.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "autoscaler:edge_latency_source_age:seconds",
+          "legendFormat": "{{client}} \u2192 {{server}}",
+          "range": true
+        }
+      ]
     }
   ]
 }
-

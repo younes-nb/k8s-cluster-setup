@@ -12,7 +12,7 @@ const timeout = new Counter('lab_timeout');
 const rejected = new Counter('lab_seed_missing');
 const unknown = new Counter('lab_unclassified_failure');
 export const options = {
-  scenarios: { api: { executor: 'constant-arrival-rate', rate: 2, timeUnit: '1s', duration: '90s', preAllocatedVUs: 10, maxVUs: 30, gracefulStop: '15s' } },
+  scenarios: { api: { executor: 'constant-arrival-rate', rate: 2, timeUnit: '1s', duration: __ENV.SMOKE_DURATION || '90s', preAllocatedVUs: 10, maxVUs: 30, gracefulStop: '15s' } },
   thresholds: { checks: ['rate==1'], dropped_iterations: ['count==0'] },
   tags: { experiment: __ENV.EXPERIMENT_ID }
 };

@@ -73,8 +73,11 @@ data:
         {% endfor %}
       ]
       forward_to = [prometheus.remote_write.mimir.receiver]
-      scrape_interval = "{{ alloy_scrape_interval }}"
-      scrape_timeout = "{{ alloy_scrape_timeout }}"
+      scrape_interval = "3s"
+      scrape_timeout = "2s"
+      // Preserve collection time; faster scraping cannot refresh cached stats.
+      honor_timestamps = true
+      job_name = "prometheus.scrape.kubelet"
       scheme = "https"
       bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
       tls_config {

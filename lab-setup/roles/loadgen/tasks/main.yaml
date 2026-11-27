@@ -83,6 +83,7 @@
       export K6_PROMETHEUS_RW_SERVER_URL=http://{{ monitoring_host }}:{{ monitoring_mimir_port }}/api/v1/push
       export K6_PROMETHEUS_RW_PUSH_INTERVAL=5s
       export K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true
+      export K6_PROMETHEUS_RW_STALE_MARKERS=true
 - name: Copy external workload only when explicitly provided
   ansible.builtin.copy:
     src: "{{ load_testing_src }}/"

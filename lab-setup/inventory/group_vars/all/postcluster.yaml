@@ -40,7 +40,7 @@ monitoring_loki_port: 3100
 monitoring_tempo_port: 3200
 monitoring_grafana_port: 3000
 monitoring_data_dir: /var/lib/monitoring
-monitoring_disk_device: '{{ lookup(''env'', ''MONITORING_DISK_DEVICE'') }}'
+monitoring_disk_device: ""
 # 46 x 10 + infrastructure + rollout headroom; admission ceiling, not capacity.
 tq_pods: '520'
 tq_count_deployments: '100'

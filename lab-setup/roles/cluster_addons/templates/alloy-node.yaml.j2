@@ -88,6 +88,27 @@ data:
     }
     {% endfor %}
     prometheus.exporter.self "node" {}
+    prometheus.exporter.cadvisor "lab" {
+      store_container_labels = true
+    }
+    discovery.relabel "cadvisor" {
+      targets = prometheus.exporter.cadvisor.lab.targets
+      rule {
+        target_label = "instance"
+        replacement = sys.env("NODE_NAME")
+      }
+      rule {
+        target_label = "node"
+        replacement = sys.env("NODE_NAME")
+      }
+    }
+    prometheus.scrape "cadvisor" {
+      targets = discovery.relabel.cadvisor.output
+      scrape_interval = "5s"
+      scrape_timeout = "4s"
+      job_name = "prometheus.scrape.cadvisor"
+      forward_to = [prometheus.remote_write.remote.receiver]
+    }
     discovery.relabel "self" {
       targets = prometheus.exporter.self.node.targets
       rule {
@@ -183,6 +204,7 @@ spec:
             - {name: logs, mountPath: /var/log/pods, readOnly: true}
             - {name: data, mountPath: /var/lib/alloy}
             - {name: metrics-ca, mountPath: /metrics-ca, readOnly: true}
+            - {name: containerd, mountPath: /run/containerd/containerd.sock, readOnly: true}
           securityContext: {runAsUser: 0, allowPrivilegeEscalation: false}
       volumes:
         - {name: conf, configMap: {name: alloy-node}}
@@ -192,4 +214,5 @@ spec:
         - {name: logs, hostPath: {path: /var/log/pods}}
         - {name: data, hostPath: {path: /var/lib/alloy-node, type: DirectoryOrCreate}}
         - {name: metrics-ca, hostPath: {path: /etc/kubernetes/metrics-ca, type: DirectoryOrCreate}}
+        - {name: containerd, hostPath: {path: /run/containerd/containerd.sock, type: Socket}}
 

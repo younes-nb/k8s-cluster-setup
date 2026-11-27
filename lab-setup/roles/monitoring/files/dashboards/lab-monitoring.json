@@ -745,6 +745,90 @@
           "range": true
         }
       ]
+    },
+    {
+      "id": 16,
+      "title": "Container CPU source age (live benchmark containers)",
+      "description": "Preserves raw source collection timestamps; 15s acceptance ceiling.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by(namespace,pod,container)(time()-timestamp(container_cpu_usage_seconds_total{job=\"prometheus.scrape.kubelet\",namespace=\"train-ticket\",container!=\"\",container!=\"POD\"})) and on(namespace,pod,container) (max by(namespace,pod,container)(kube_pod_container_status_running{namespace=\"train-ticket\"} == 1))",
+          "legendFormat": "{{pod}} / {{container}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Raw k6 counter source age",
+      "description": "Counter source age; unique run ID; completed runs may disappear after stale markers.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "lab-mimir"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 80,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by(experiment)(time()-timestamp(k6_lab_attempted_total))",
+          "legendFormat": "attempted {{experiment}}",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "expr": "max by(experiment)(time()-timestamp(k6_lab_good_total))",
+          "legendFormat": "good {{experiment}}",
+          "range": true
+        },
+        {
+          "refId": "C",
+          "expr": "max by(experiment)(time()-timestamp(k6_lab_slow_success_total))",
+          "legendFormat": "slow_success {{experiment}}",
+          "range": true
+        },
+        {
+          "refId": "D",
+          "expr": "max by(experiment)(time()-timestamp(k6_lab_failed_total))",
+          "legendFormat": "failed {{experiment}}",
+          "range": true
+        },
+        {
+          "refId": "E",
+          "expr": "max by(experiment)(time()-timestamp(k6_lab_timeout_total))",
+          "legendFormat": "timeout {{experiment}}",
+          "range": true
+        }
+      ]
     }
   ],
   "links": [
@@ -760,4 +844,3 @@
     }
   ]
 }
-

@@ -69,6 +69,7 @@
 # already be a mountpoint, as it is today).
 - name: Prepare the monitoring data disk
   ansible.builtin.script: setup_monitoring_disk.sh
+  when: monitoring_disk_device | default('') | length > 0
   args:
     executable: /bin/bash
   environment:

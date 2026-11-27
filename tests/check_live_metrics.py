@@ -47,6 +47,8 @@ class Validation:
         self.run(label, expr, lambda rows: set(expected) <= {m.get(key) for m,v in rows if pred(v)} and all(pred(v) for m,v in rows if m.get(key) in expected))
     def exact_identities(self, label, expr, key, expected, pred=lambda v: True):
         self.run(label, expr, lambda rows: {m.get(key) for m,v in rows} == set(expected) and len(rows) == len(expected) and all(pred(v) for _,v in rows))
+    def expected_edges(self, label, expr, expected, pred):
+        self.run(label, expr, lambda rows: set(expected) <= {(m.get("client"), m.get("server")) for m,v in rows if pred(v)} and all(pred(v) for _,v in rows) and len(rows)==len({(m.get("client"),m.get("server")) for m,v in rows}))
     def fresh(self, label, selector, max_age):
         self.values(label, f'time() - timestamp({selector})', lambda v: -2 <= v <= max_age)
 
@@ -76,8 +78,20 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     t.identities('all eight host exporters', 'max by(instance)(node_memory_MemTotal_bytes)','instance',HOSTS,lambda v:v>0)
     t.identities('host sample freshness','max by(instance)(time()-timestamp(node_memory_MemTotal_bytes))','instance',HOSTS,lambda v:-2<=v<=max_age)
     t.identities('all six Kubernetes nodes Ready','kube_node_status_condition{condition="Ready",status="true"}','node',NODES,lambda v:v==1)
-    t.identities('all six cAdvisor nodes','count by(node)(container_cpu_usage_seconds_total{container!="",container!="POD"})','node',NODES,lambda v:v>0)
-    t.identities('cAdvisor freshness','max by(node)(time()-timestamp(container_cpu_usage_seconds_total{container!="",container!="POD"}))','node',NODES,lambda v:-2<=v<=max_age)
+    cadvisor = 'container_cpu_usage_seconds_total{job="integrations/cadvisor",container!="",container!="POD"}'
+    t.identities('all six cAdvisor nodes', 'count by(node)('+cadvisor+')','node',NODES,lambda v:v>0)
+    # Verify the current Running container identities, not stale series left by scaled-in Pods.
+    # Freshness is source time, not the timestamp of a recording rule or HTTP scrape.
+    running = 'max by(namespace,pod,container)(kube_pod_container_status_running == 1)'
+    cpu_age = 'max by(namespace,pod,container)(time()-timestamp(container_cpu_usage_seconds_total{job="integrations/cadvisor",namespace!="",pod!="",container!="",container!="POD"}))'
+    t.values('cAdvisor live Kubernetes container coverage', 'count('+running+' and on(namespace,pod,container) ('+cpu_age+')) / count('+running+')', lambda v:v==1)
+    t.values('cAdvisor live Kubernetes container freshness', '('+cpu_age+') and on(namespace,pod,container) ('+running+')', lambda v:-2<=v<=max_age)
+    # Restrict per-node freshness to currently Running containers, while still
+    # requiring coverage on all six nodes; a fresh scrape alone is insufficient.
+    active_cpu_age = '('+cpu_age+') and on(namespace,pod,container) ('+running+')'
+    node_age = 'max by(node)(('+active_cpu_age+') * on(namespace,pod) group_left(node) max by(namespace,pod,node)(kube_pod_info{node!=""}))'
+    t.identities('cAdvisor per-node source freshness',node_age,'node',NODES,lambda v:-2<=v<=max_age)
+    t.exact_identities('cAdvisor scrape targets healthy','up{job="integrations/cadvisor"}','node',NODES,lambda v:v==1)
     t.identities('all expected benchmark deployments desired','kube_deployment_spec_replicas'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.identities('all benchmark deployments available','kube_deployment_status_replicas_available'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.values('no unavailable benchmark replicas','autoscaler:deployment_unavailable:replicas'+filt,lambda v:v==0)
@@ -106,9 +120,21 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     t.identities('expected service P90 finite','autoscaler:service_latency:p90_seconds'+service_filter,'service_name',services,lambda v:v>=0)
     t.identities('expected service raw sample freshness','autoscaler:service_telemetry_age:seconds'+service_filter,'service_name',services,lambda v:-2<=v<=max_age)
     edges={tuple(e) for e in contract['active_edges']}
+    edge_filter='{client_namespace='+ns+',server_namespace='+ns+'}'
+    # Do not fail because an unrelated or idle edge has NaN. Do fail if ANY
+    # required active edge is missing, invalid or stale, or any active internal
+    # edge is missing a valid latency. The fixture is independently determined.
     for suffix,pred in [('edge_requests:rate1m',lambda v:v>0),('edge_latency:p90_seconds',lambda v:v>=0),('edge_slo:violation',lambda v:v in (0,1))]:
-        t.run(suffix,'autoscaler:'+suffix,lambda rows:edges <= {(m.get('client'),m.get('server')) for m,v in rows if pred(v)})
-    t.fresh('raw edge counter freshness','traces_service_graph_request_total',max_age)
+        expr='autoscaler:'+suffix+edge_filter
+        if suffix=='edge_requests:rate1m':
+            expr+=' > 0'
+        t.expected_edges(suffix,expr,edges,pred)
+    keys='client,server,client_namespace,server_namespace'
+    for label,metric in [('request','traces_service_graph_request_total'+edge_filter),('latency','traces_service_graph_request_client_seconds_bucket{client_namespace='+ns+',server_namespace='+ns+',le="+Inf"}')]:
+        # Direct raw-source timestamps, not the timestamp of a ruler output.
+        expr='max by('+keys+') ((time()-timestamp('+metric+')) and (rate('+metric+'[1m]) > 0))'
+        t.expected_edges('raw '+label+' edge source freshness',expr,edges,lambda v:-2<=v<=max_age)
+    t.values('no active internal edge missing latency', 'absent((autoscaler:edge_requests:rate1m'+edge_filter+' > 0) unless on('+keys+') autoscaler:edge_latency:p90_seconds'+edge_filter+')', lambda v:v==1)
     t.values('frontend valid PBScaler SLO observation','autoscaler:frontend_slo:violation'+service_filter,lambda v:v in (0,1))
     for metric in ['k6_lab_attempted_total','k6_lab_good_total','k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total','k6_http_reqs_total']:
         sel=metric+'{experiment='+exp+'}'
