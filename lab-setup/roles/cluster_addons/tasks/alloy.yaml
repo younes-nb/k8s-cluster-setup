@@ -51,7 +51,7 @@
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
     template: "{{ item }}.yaml.j2"
-  loop: [alloy, alloy-node, alloy-profile]
+  loop: [alloy, alloy-node, alloy-profile, cadvisor]
   register: collector_apply
 - name: Restart changed collectors
   ansible.builtin.command: >-
@@ -60,10 +60,11 @@
     - {kind: deployment, name: alloy}
     - {kind: daemonset, name: alloy-node}
     - {kind: daemonset, name: alloy-profile}
+    - {kind: daemonset, name: cadvisor}
   when: collector_apply is changed or db_secret is changed
 - name: Require every collector rollout to finish
   ansible.builtin.command: >-
     kubectl --kubeconfig={{ kubeconfig_path }} -n {{ monitoring_ns }} rollout status {{ item }} --timeout=600s
-  loop: [deployment/alloy, daemonset/alloy-node, daemonset/alloy-profile]
+  loop: [deployment/alloy, daemonset/alloy-node, daemonset/alloy-profile, daemonset/cadvisor]
   changed_when: false
 

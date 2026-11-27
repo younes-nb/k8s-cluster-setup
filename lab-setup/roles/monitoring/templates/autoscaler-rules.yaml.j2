@@ -3,25 +3,25 @@ groups:
   interval: 5s
   rules:
   - record: autoscaler:edge_requests:rate1m
-    expr: sum by (client,server,client_namespace,server_namespace) (rate(traces_service_graph_request_total[1m]))
+    expr: sum by (client,server,client_k8s_namespace_name,server_k8s_namespace_name) (rate(traces_service_graph_request_total[1m]))
   # A request counter is not proof that a client-side duration was observed.
   # Keep the full directed edge identity, and retain separate coverage evidence.
   - record: autoscaler:edge_latency_observations:rate1m
-    expr: sum by (client,server,client_namespace,server_namespace) (rate(traces_service_graph_request_client_seconds_bucket{le="+Inf"}[1m]))
+    expr: sum by (client,server,client_k8s_namespace_name,server_k8s_namespace_name) (rate(traces_service_graph_request_client_seconds_bucket{le="+Inf"}[1m]))
   - record: autoscaler:edge_latency:p90_seconds
     expr: |
-      (histogram_quantile(0.90, sum by (client,server,client_namespace,server_namespace,le) (rate(traces_service_graph_request_client_seconds_bucket[1m]))) >= 0)
+      (histogram_quantile(0.90, sum by (client,server,client_k8s_namespace_name,server_k8s_namespace_name,le) (rate(traces_service_graph_request_client_seconds_bucket[1m]))) >= 0)
       < +Inf
-      and on(client,server,client_namespace,server_namespace) (autoscaler:edge_latency_observations:rate1m > 0)
-      and on(client,server,client_namespace,server_namespace) (autoscaler:edge_requests:rate1m > 0)
+      and on(client,server,client_k8s_namespace_name,server_k8s_namespace_name) (autoscaler:edge_latency_observations:rate1m > 0)
+      and on(client,server,client_k8s_namespace_name,server_k8s_namespace_name) (autoscaler:edge_requests:rate1m > 0)
   - record: autoscaler:edge_latency:missing
-    expr: (autoscaler:edge_requests:rate1m > 0) unless on(client,server,client_namespace,server_namespace) autoscaler:edge_latency:p90_seconds
+    expr: (autoscaler:edge_requests:rate1m > 0) unless on(client,server,client_k8s_namespace_name,server_k8s_namespace_name) autoscaler:edge_latency:p90_seconds
   - record: autoscaler:edge_request_source_age:seconds
-    expr: max by (client,server,client_namespace,server_namespace) ((time() - timestamp(traces_service_graph_request_total)) and (rate(traces_service_graph_request_total[1m]) > 0))
+    expr: max by (client,server,client_k8s_namespace_name,server_k8s_namespace_name) ((time() - timestamp(traces_service_graph_request_total)) and (rate(traces_service_graph_request_total[1m]) > 0))
   - record: autoscaler:edge_latency_source_age:seconds
-    expr: max by (client,server,client_namespace,server_namespace) ((time() - timestamp(traces_service_graph_request_client_seconds_bucket{le="+Inf"})) and (rate(traces_service_graph_request_client_seconds_bucket{le="+Inf"}[1m]) > 0))
+    expr: max by (client,server,client_k8s_namespace_name,server_k8s_namespace_name) ((time() - timestamp(traces_service_graph_request_client_seconds_bucket{le="+Inf"})) and (rate(traces_service_graph_request_client_seconds_bucket{le="+Inf"}[1m]) > 0))
   - record: autoscaler:edge_failure:rate1m
-    expr: sum by (client,server,client_namespace,server_namespace) (rate(traces_service_graph_request_failed_total[1m]))
+    expr: sum by (client,server,client_k8s_namespace_name,server_k8s_namespace_name) (rate(traces_service_graph_request_failed_total[1m]))
   - record: autoscaler:edge_slo:violation
     expr: (autoscaler:edge_latency:p90_seconds > bool ({{ tt_slo_seconds }} * 1.1)) and (autoscaler:edge_requests:rate1m > 0) and (autoscaler:edge_latency:p90_seconds >= 0)
   - record: autoscaler:service_requests:rate1m

@@ -16,6 +16,7 @@ prom_repo_name: prometheus-community
 prom_repo_url: https://prometheus-community.github.io/helm-charts
 prom_stack_version: 79.8.2
 alloy_image: docker.io/grafana/alloy:v1.20.0
+cadvisor_image: gcr.io/cadvisor/cadvisor:v0.49.1
 alloy_scrape_interval: 5s
 beyla_image: docker.io/grafana/beyla:3.37.0
 tt_ns: train-ticket

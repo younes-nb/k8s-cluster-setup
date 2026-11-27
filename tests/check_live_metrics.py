@@ -91,7 +91,7 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     active_cpu_age = '('+cpu_age+') and on(namespace,pod,container) ('+running+')'
     node_age = 'max by(node)(('+active_cpu_age+') * on(namespace,pod) group_left(node) max by(namespace,pod,node)(kube_pod_info{node!=""}))'
     t.identities('cAdvisor per-node source freshness',node_age,'node',NODES,lambda v:-2<=v<=max_age)
-    t.exact_identities('cAdvisor scrape targets healthy','up{job="prometheus.scrape.cadvisor"}','node',NODES,lambda v:v==1)
+    t.exact_identities('cAdvisor scrape targets healthy','up{job="integrations/cadvisor"}','node',NODES,lambda v:v==1)
     t.identities('all expected benchmark deployments desired','kube_deployment_spec_replicas'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.identities('all benchmark deployments available','kube_deployment_status_replicas_available'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.values('no unavailable benchmark replicas','autoscaler:deployment_unavailable:replicas'+filt,lambda v:v==0)
@@ -120,7 +120,7 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     t.identities('expected service P90 finite','autoscaler:service_latency:p90_seconds'+service_filter,'service_name',services,lambda v:v>=0)
     t.identities('expected service raw sample freshness','autoscaler:service_telemetry_age:seconds'+service_filter,'service_name',services,lambda v:-2<=v<=max_age)
     edges={tuple(e) for e in contract['active_edges']}
-    edge_filter='{client_namespace='+ns+',server_namespace='+ns+'}'
+    edge_filter='{client_k8s_namespace_name='+ns+',server_k8s_namespace_name='+ns+'}'
     # Do not fail because an unrelated or idle edge has NaN. Do fail if ANY
     # required active edge is missing, invalid or stale, or any active internal
     # edge is missing a valid latency. The fixture is independently determined.
@@ -129,12 +129,17 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
         if suffix=='edge_requests:rate1m':
             expr+=' > 0'
         t.expected_edges(suffix,expr,edges,pred)
-    keys='client,server,client_namespace,server_namespace'
-    for label,metric in [('request','traces_service_graph_request_total'+edge_filter),('latency','traces_service_graph_request_client_seconds_bucket{client_namespace='+ns+',server_namespace='+ns+',le="+Inf"}')]:
+    keys='client,server,client_k8s_namespace_name,server_k8s_namespace_name'
+    for label,metric in [('request','traces_service_graph_request_total'+edge_filter),('latency','traces_service_graph_request_client_seconds_bucket{client_k8s_namespace_name='+ns+',server_k8s_namespace_name='+ns+',le="+Inf"}')]:
         # Direct raw-source timestamps, not the timestamp of a ruler output.
         expr='max by('+keys+') ((time()-timestamp('+metric+')) and (rate('+metric+'[1m]) > 0))'
         t.expected_edges('raw '+label+' edge source freshness',expr,edges,lambda v:-2<=v<=max_age)
-    t.values('no active internal edge missing latency', 'absent((autoscaler:edge_requests:rate1m'+edge_filter+' > 0) unless on('+keys+') autoscaler:edge_latency:p90_seconds'+edge_filter+')', lambda v:v==1)
+    # Only HTTP edges (those with a latency histogram) can be "missing latency".
+    # Beyla emits request counts for non-HTTP DB connections (e.g. ts-auth-service ->
+    # ts-mysql, nacos -> nacosdb-mysql) but no HTTP latency histogram, so requiring
+    # p90 for every edge with requests would flag legitimate non-HTTP edges. Restrict
+    # the check to edges that actually have latency observations.
+    t.values('no active internal edge missing latency', 'absent(((autoscaler:edge_requests:rate1m'+edge_filter+' > 0) and on('+keys+') (autoscaler:edge_latency_observations:rate1m'+edge_filter+' > 0)) unless on('+keys+') autoscaler:edge_latency:p90_seconds'+edge_filter+')', lambda v:v==1)
     t.values('frontend valid PBScaler SLO observation','autoscaler:frontend_slo:violation'+service_filter,lambda v:v in (0,1))
     for metric in ['k6_lab_attempted_total','k6_lab_good_total','k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total','k6_http_reqs_total']:
         sel=metric+'{experiment='+exp+'}'

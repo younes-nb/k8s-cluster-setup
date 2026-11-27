@@ -1,0 +1,78 @@
+{#
+  Standalone cAdvisor DaemonSet.
+
+  The in-tree kubelet cAdvisor is scraped with a ~130 s cache, which violates the
+  15 s source-age gate. Alloy's `prometheus.exporter.cadvisor` (v1.20.0) rejects
+  `rootfs_path`/`sysfs_path` and only ever sees the container's own root cgroup
+  (`id=/`), so it cannot enumerate Kubernetes containers. This DaemonSet runs the
+  real cAdvisor with a 3 s housekeeping interval and the host containerd socket,
+  and alloy-node scrapes it at 127.0.0.1:8080 (both are hostNetwork).
+#}
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: cadvisor, namespace: {{ monitoring_ns }}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: cadvisor}
+rules:
+  - apiGroups: ['']
+    resources: [pods, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: ['']
+    resources: [namespaces]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: cadvisor}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cadvisor}
+subjects:
+  - {kind: ServiceAccount, name: cadvisor, namespace: {{ monitoring_ns }}}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cadvisor
+  namespace: {{ monitoring_ns }}
+  labels: {app: cadvisor}
+spec:
+  selector: {matchLabels: {app: cadvisor}}
+  template:
+    metadata: {labels: {app: cadvisor}}
+    spec:
+      serviceAccountName: cadvisor
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: cadvisor
+          image: {{ cadvisor_image }}
+          args:
+            - --housekeeping_interval=3s
+            - --store_container_labels=true
+            - --port=8080
+          ports:
+            - {containerPort: 8080, name: metrics}
+          resources:
+            requests: {cpu: 100m, memory: 200Mi}
+            limits: {memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - {name: rootfs, mountPath: /rootfs, readOnly: true}
+            - {name: sys, mountPath: /sys, readOnly: true}
+            - {name: dev-disk, mountPath: /dev/disk, readOnly: true}
+            - {name: containerd, mountPath: /var/lib/containerd, readOnly: true}
+            - {name: run-containerd, mountPath: /run/containerd, readOnly: true}
+          securityContext: {privileged: true}
+      volumes:
+        - {name: rootfs, hostPath: {path: /}}
+        - {name: sys, hostPath: {path: /sys}}
+        - {name: dev-disk, hostPath: {path: /dev/disk}}
+        - {name: containerd, hostPath: {path: /var/lib/containerd}}
+        - {name: run-containerd, hostPath: {path: /run/containerd}}

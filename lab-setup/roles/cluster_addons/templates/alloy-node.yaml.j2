@@ -88,26 +88,40 @@ data:
     }
     {% endfor %}
     prometheus.exporter.self "node" {}
-    prometheus.exporter.cadvisor "lab" {
-      store_container_labels = true
-    }
-    discovery.relabel "cadvisor" {
-      targets = prometheus.exporter.cadvisor.lab.targets
+    // The kubelet cAdvisor cache is ~130 s and Alloy's own prometheus.exporter.cadvisor
+    // (v1.20.0) rejects rootfs_path/sysfs_path, so it only sees the container's own
+    // root cgroup (id=/) and never enumerates Kubernetes containers. Scrape the
+    // standalone cadvisor DaemonSet instead; both pods are hostNetwork, so
+    // 127.0.0.1:8080 is the per-node cAdvisor with a 3 s housekeeping interval.
+    // The standalone cadvisor DaemonSet exposes Kubernetes metadata as
+    // container_label_io_kubernetes_* labels (kubelet-schema uses pod/namespace/
+    // container). Copy them onto the canonical label names the acceptance joins on,
+    // then drop the high-cardinality container_label_* noise.
+    prometheus.relabel "cadvisor" {
+      forward_to = [prometheus.remote_write.remote.receiver]
       rule {
-        target_label = "instance"
-        replacement = sys.env("NODE_NAME")
+        source_labels = ["container_label_io_kubernetes_pod_name"]
+        target_label = "pod"
       }
       rule {
-        target_label = "node"
-        replacement = sys.env("NODE_NAME")
+        source_labels = ["container_label_io_kubernetes_pod_namespace"]
+        target_label = "namespace"
+      }
+      rule {
+        source_labels = ["container_label_io_kubernetes_container_name"]
+        target_label = "container"
+      }
+      rule {
+        action = "labeldrop"
+        regex = "container_label_.*"
       }
     }
     prometheus.scrape "cadvisor" {
-      targets = discovery.relabel.cadvisor.output
+      targets = [{"__address__" = "127.0.0.1:8080", "node" = sys.env("NODE_NAME")}]
       scrape_interval = "5s"
       scrape_timeout = "4s"
-      job_name = "prometheus.scrape.cadvisor"
-      forward_to = [prometheus.remote_write.remote.receiver]
+      job_name = "integrations/cadvisor"
+      forward_to = [prometheus.relabel.cadvisor.receiver]
     }
     discovery.relabel "self" {
       targets = prometheus.exporter.self.node.targets
