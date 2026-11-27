@@ -44,4 +44,12 @@ class TestK6Stream(unittest.TestCase):
         after['k6_lab_failed_total']['total']=None
         with self.assertRaises(ValueError): verify_progress(before,after)
 
+    def test_stale_event_counter_is_allowed(self):
+        # A present cumulative event counter with an old sample is valid (rare events).
+        def query(expr):
+            if expr.startswith('time()') and 'k6_lab_failed_total' in expr:
+                return [{'metric':{'experiment':'run1'},'value':[0,'999']}]
+            return self.query(expr)
+        snapshot(query,'run1')  # must not raise on stale event counter
+
 if __name__=='__main__': unittest.main()

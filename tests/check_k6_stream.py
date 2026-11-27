@@ -42,7 +42,10 @@ def snapshot(query, experiment, max_age=15, scenario="load"):
             raise ValueError(name + ': inconsistent or duplicate identities')
         if any(m.get('experiment') != experiment or v < 0 for m,v in rows):
             raise ValueError(name + ': wrong experiment or negative count')
-        if any(not -2 <= v <= max_age for _,v in ages):
+        # Continuous counters must be fresh; cumulative event counters
+        # (slow/failed/timeout) increment rarely, so a present-but-older sample
+        # is valid. Their liveness is proven by the continuous counters.
+        if name not in EVENT_COUNTERS and any(not -2 <= v <= max_age for _,v in ages):
             raise ValueError(name + ': stale source sample')
         result[name] = {'total': sum(v for _,v in rows),
                         'max_age_seconds': max(v for _,v in ages), 'series': len(rows)}

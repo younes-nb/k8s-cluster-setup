@@ -64,6 +64,21 @@ class Validation:
             print('FAIL', label, str(exc))
     def fresh(self, label, selector, max_age):
         self.values(label, f'time() - timestamp({selector})', lambda v: -2 <= v <= max_age)
+    def present_or_unknown(self, label, selector):
+        # Cumulative event counters (slow/failed/timeout) have no series at 0
+        # events; that is unknown, not a measured zero and not a failure.
+        try:
+            rows = finite_rows(self.query(selector))
+        except ValueError as exc:
+            if str(exc) == 'empty result':
+                print('PASS', label, '(unknown: 0 events)')
+                return
+            raise
+        if not all(v >= 0 for _, v in rows):
+            self.failures.append(label)
+            print('FAIL', label, 'negative count')
+        else:
+            print('PASS', label, f'({len(rows)} series)')
 
 
 def make_query(base):
@@ -159,13 +174,14 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     t.values('frontend valid PBScaler SLO observation','autoscaler:frontend_slo:violation'+service_filter,lambda v:v in (0,1))
     for metric in ['k6_lab_attempted_total','k6_lab_good_total','k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total','k6_http_reqs_total']:
         sel=metric+'{experiment='+exp+',scenario='+sc+'}'
-        t.values('present '+metric,sel,lambda v:v>=0)
         # The k6 setup() phase (broker login) leaves a stale ::setup series; the
         # measurement freshness is the load scenario only. The continuous counters
         # (attempted/good/http_reqs) prove stream liveness; slow/failed/timeout are
-        # cumulative event counters checked for presence only.
+        # cumulative event counters: absent at 0 events = unknown, not measured zero.
         if metric in ('k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total'):
+            t.present_or_unknown('present '+metric,sel)
             continue
+        t.values('present '+metric,sel,lambda v:v>=0)
         t.fresh('fresh '+metric,metric+'{experiment='+exp+',scenario='+sc+'}',max_age)
     t.values('k6 native histogram count', 'histogram_count(k6_http_req_duration_seconds{experiment='+exp+',scenario='+sc+'})', lambda v:v>=0)
     t.values('k6 histogram has observations', 'sum(histogram_count(k6_http_req_duration_seconds{experiment='+exp+',scenario='+sc+'}))', lambda v:v>0)
