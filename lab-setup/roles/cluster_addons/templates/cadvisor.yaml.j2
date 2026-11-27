@@ -52,6 +52,9 @@ spec:
           image: {{ cadvisor_image }}
           args:
             - --housekeeping_interval=3s
+            - --allow_dynamic_housekeeping=false
+            - --max_housekeeping_interval=3s
+            - --listen_ip=127.0.0.1
             - --store_container_labels=true
             - --port=8080
           ports:
@@ -60,7 +63,7 @@ spec:
             requests: {cpu: 100m, memory: 200Mi}
             limits: {memory: 1Gi}
           readinessProbe:
-            httpGet: {path: /healthz, port: 8080}
+            httpGet: {host: 127.0.0.1, path: /healthz, port: 8080}
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:

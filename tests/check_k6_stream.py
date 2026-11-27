@@ -18,20 +18,20 @@ EVENT_COUNTERS = {'k6_lab_slow_success_total', 'k6_lab_failed_total',
                   'k6_lab_timeout_total'}
 
 
-def snapshot(query, experiment, max_age=15):
+def snapshot(query, experiment, max_age=15, scenario="load"):
     result = {}
     for name in COUNTERS:
         # The k6 setup() phase leaves a stale ::setup series; the measurement is
         # the load scenario only.
-        selector = name + '{experiment=' + json.dumps(experiment) + ',scenario="load"}'
-        try:
-            rows = finite_rows(query(selector))
-            ages = finite_rows(query('time()-timestamp(' + selector + ')'))
-        except ValueError as exc:
-            if str(exc) == 'empty result' and name in EVENT_COUNTERS:
-                result[name] = {'total': 0, 'max_age_seconds': 0, 'series': 0}
-                continue
-            raise
+        selector = name + '{experiment=' + json.dumps(experiment) + ',scenario=' + json.dumps(scenario) + '}'
+        raw = query(selector)
+        if not raw and name in EVENT_COUNTERS:
+            # Sparse event streams may not have emitted yet. This is unknown,
+            # not a measured zero or a fresh sample. Keep it visible in evidence.
+            result[name] = {'total': None, 'max_age_seconds': None, 'series': 0}
+            continue
+        rows = finite_rows(raw)
+        ages = finite_rows(query('time()-timestamp(' + selector + ')'))
         # Values and ages must refer to the same raw series. Never use the
         # API result evaluation timestamp as the source timestamp.
         def identity(labels):
@@ -50,11 +50,17 @@ def snapshot(query, experiment, max_age=15):
 
 
 def verify_progress(before, after):
-    deltas = {k: after[k]['total']-before[k]['total'] for k in COUNTERS}
-    if any(v < 0 or not math.isfinite(v) for v in deltas.values()):
+    deltas = {}
+    for k in COUNTERS:
+        old, new = before[k]['total'], after[k]['total']
+        if old is not None and new is None:
+            raise ValueError(k + ': observed counter disappeared during run')
+        deltas[k] = None if old is None or new is None else new-old
+    if any(v < 0 or not math.isfinite(v) for v in deltas.values() if v is not None):
         raise ValueError('counter reset or nonfinite delta in unique experiment')
-    if not (deltas[COUNTERS[0]] > 0 and deltas[COUNTERS[-1]] > 0
-            and sum(deltas[k] for k in COUNTERS[1:4]) > 0):
+    if not (deltas[COUNTERS[0]] is not None and deltas[COUNTERS[0]] > 0
+            and deltas[COUNTERS[-1]] is not None and deltas[COUNTERS[-1]] > 0
+            and any(deltas[k] is not None and deltas[k] > 0 for k in COUNTERS[1:4])):
         raise ValueError('no in-run progress in attempts, HTTP completions, or terminal outcomes')
     return deltas
 
@@ -63,6 +69,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mimir', required=True)
     p.add_argument('--experiment', required=True)
+    p.add_argument('--scenario', default='load', help='k6 measurement scenario')
     p.add_argument('--duration', type=float, default=40)
     p.add_argument('--interval', type=float, default=2)
     p.add_argument('--max-age', type=float, default=15)
@@ -80,7 +87,7 @@ def main():
         while True:
             now = time.monotonic()
             try:
-                last = snapshot(query, a.experiment, a.max_age)
+                last = snapshot(query, a.experiment, a.max_age, a.scenario)
                 if first is None:
                     first = last
                 f.write(json.dumps({'epoch': time.time(), 'samples': last})+'\n')

@@ -429,7 +429,7 @@
     },
     {
       "id": 10,
-      "title": "Active edges missing valid client latency",
+      "title": "Active edges without valid client latency (includes non-HTTP)",
       "description": "Positive edge demand with missing/invalid latency; no data alone is not proof of coverage.",
       "type": "timeseries",
       "datasource": {

@@ -49,6 +49,19 @@ class Validation:
         self.run(label, expr, lambda rows: {m.get(key) for m,v in rows} == set(expected) and len(rows) == len(expected) and all(pred(v) for _,v in rows))
     def expected_edges(self, label, expr, expected, pred):
         self.run(label, expr, lambda rows: set(expected) <= {(m.get("client"), m.get("server")) for m,v in rows if pred(v)} and all(pred(v) for _,v in rows) and len(rows)==len({(m.get("client"),m.get("server")) for m,v in rows}))
+    def no_unexpected_missing_edges(self, label, expr, exempt):
+        # Empty is success only for this explicit absence assertion. Do not
+        # infer protocol from the presence or absence of a latency histogram.
+        try:
+            raw = self.query(expr)
+            rows = finite_rows(raw) if raw else []
+            observed = {(m.get('client'), m.get('server')) for m,v in rows}
+            if len(observed) != len(rows) or not observed <= set(exempt) or any(v <= 0 for _,v in rows):
+                raise ValueError('unexpected missing latency: ' + repr(observed - set(exempt)))
+            print('PASS', label, f'({len(rows)} explicitly exempt edges)')
+        except Exception as exc:
+            self.failures.append(label)
+            print('FAIL', label, str(exc))
     def fresh(self, label, selector, max_age):
         self.values(label, f'time() - timestamp({selector})', lambda v: -2 <= v <= max_age)
 
@@ -66,10 +79,11 @@ def make_query(base):
     return query
 
 
-def validate(query, contract, namespace='train-ticket', max_age=15, experiment='smoke'):
+def validate(query, contract, namespace='train-ticket', max_age=15, experiment='smoke', scenario='load'):
     t=Validation(query)
     ns=json.dumps(namespace)
     exp=json.dumps(experiment)
+    sc=json.dumps(scenario)
     filt='{namespace='+ns+'}'
     # identity checks, not counts of arbitrary or duplicate series
     # Node metrics come from two owners: the 6 cluster nodes via the in-cluster
@@ -92,6 +106,8 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     node_age = 'max by(node)(('+active_cpu_age+') * on(namespace,pod) group_left(node) max by(namespace,pod,node)(kube_pod_info{node!=""}))'
     t.identities('cAdvisor per-node source freshness',node_age,'node',NODES,lambda v:-2<=v<=max_age)
     t.exact_identities('cAdvisor scrape targets healthy','up{job="integrations/cadvisor"}','node',NODES,lambda v:v==1)
+    t.values('no legacy kubelet cAdvisor scrape', 'absent(up{job="prometheus.scrape.kubelet"})', lambda v:v==1)
+    t.exact_identities('kubelet operational metrics healthy','up{job="lab-kubelet"}','node',NODES,lambda v:v==1)
     t.identities('all expected benchmark deployments desired','kube_deployment_spec_replicas'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.identities('all benchmark deployments available','kube_deployment_status_replicas_available'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.values('no unavailable benchmark replicas','autoscaler:deployment_unavailable:replicas'+filt,lambda v:v==0)
@@ -134,15 +150,15 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
         # Direct raw-source timestamps, not the timestamp of a ruler output.
         expr='max by('+keys+') ((time()-timestamp('+metric+')) and (rate('+metric+'[1m]) > 0))'
         t.expected_edges('raw '+label+' edge source freshness',expr,edges,lambda v:-2<=v<=max_age)
-    # Only HTTP edges (those with a latency histogram) can be "missing latency".
-    # Beyla emits request counts for non-HTTP DB connections (e.g. ts-auth-service ->
-    # ts-mysql, nacos -> nacosdb-mysql) but no HTTP latency histogram, so requiring
-    # p90 for every edge with requests would flag legitimate non-HTTP edges. Restrict
-    # the check to edges that actually have latency observations.
-    t.values('no active internal edge missing latency', 'absent(((autoscaler:edge_requests:rate1m'+edge_filter+' > 0) and on('+keys+') (autoscaler:edge_latency_observations:rate1m'+edge_filter+' > 0)) unless on('+keys+') autoscaler:edge_latency:p90_seconds'+edge_filter+')', lambda v:v==1)
+    # Non-HTTP exceptions must be independently established and declared in the
+    # contract, not inferred from missing histograms. An unexpected active edge
+    # with no observations is still a failure.
+    exempt = {(e['client'], e['server']) for e in contract.get('latency_exempt_edges', [])}
+    t.no_unexpected_missing_edges('no unexpected active internal edge missing latency',
+        '(autoscaler:edge_requests:rate1m'+edge_filter+' > 0) unless on('+keys+') autoscaler:edge_latency:p90_seconds'+edge_filter, exempt)
     t.values('frontend valid PBScaler SLO observation','autoscaler:frontend_slo:violation'+service_filter,lambda v:v in (0,1))
     for metric in ['k6_lab_attempted_total','k6_lab_good_total','k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total','k6_http_reqs_total']:
-        sel=metric+'{experiment='+exp+'}'
+        sel=metric+'{experiment='+exp+',scenario='+sc+'}'
         t.values('present '+metric,sel,lambda v:v>=0)
         # The k6 setup() phase (broker login) leaves a stale ::setup series; the
         # measurement freshness is the load scenario only. The continuous counters
@@ -150,10 +166,11 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
         # cumulative event counters checked for presence only.
         if metric in ('k6_lab_slow_success_total','k6_lab_failed_total','k6_lab_timeout_total'):
             continue
-        t.fresh('fresh '+metric,metric+'{experiment='+exp+',scenario="load"}',max_age)
-    t.values('k6 native histogram count', 'histogram_count(k6_http_req_duration_seconds{experiment='+exp+',scenario="load"})', lambda v:v>=0)
-    t.fresh('k6 histogram freshness', 'k6_http_req_duration_seconds{experiment='+exp+',scenario="load"}', max_age)
-    t.values('k6 workload is active','sum(rate(k6_lab_attempted_total{experiment='+exp+'}[1m]))',lambda v:v>0)
+        t.fresh('fresh '+metric,metric+'{experiment='+exp+',scenario='+sc+'}',max_age)
+    t.values('k6 native histogram count', 'histogram_count(k6_http_req_duration_seconds{experiment='+exp+',scenario='+sc+'})', lambda v:v>=0)
+    t.values('k6 histogram has observations', 'sum(histogram_count(k6_http_req_duration_seconds{experiment='+exp+',scenario='+sc+'}))', lambda v:v>0)
+    t.fresh('k6 histogram freshness', 'k6_http_req_duration_seconds{experiment='+exp+',scenario='+sc+'}', max_age)
+    t.values('k6 workload is active','sum(rate(k6_lab_attempted_total{experiment='+exp+',scenario='+sc+'}[1m]))',lambda v:v>0)
     # Require the agent to enumerate deployment-specific feature metric names, not claim unknown signals available.
     for item in contract['extra_metrics']:
         if 'equals' in item:
@@ -178,6 +195,7 @@ def main():
     p.add_argument('--contract',required=True,help='verified JSON with deployments, active_services, active_edges, extra_metrics')
     p.add_argument('--namespace',default='train-ticket')
     p.add_argument('--experiment',required=True)
+    p.add_argument('--scenario',default='load',help='k6 measurement scenario (load, api, smoke, etc.)')
     p.add_argument('--max-age',type=float,default=15)
     a=p.parse_args()
     if not 0<a.max_age<=15:
@@ -185,7 +203,13 @@ def main():
     c=json.loads(pathlib.Path(a.contract).read_text())
     if any(not c.get(k) for k in ('deployments','active_services','active_edges','extra_metrics','rabbitmq_pods')):
         p.error('all contract groups must be nonempty; obtain independent expected identities before testing')
-    failed=validate(make_query(a.mimir),c,a.namespace,a.max_age,a.experiment)
+    exemptions = c.get('latency_exempt_edges', [])
+    if not isinstance(exemptions, list) or any(not isinstance(e, dict) or not all(isinstance(e.get(k), str) and e[k].strip() for k in ('client','server','protocol','reason')) or e['protocol'].lower() in ('http','https','grpc','unknown') for e in exemptions):
+        p.error('latency_exempt_edges must contain independently verified non-HTTP/non-gRPC pairs with protocol and reason')
+    exempt_pairs = {(e['client'],e['server']) for e in exemptions}
+    if len(exempt_pairs) != len(exemptions) or exempt_pairs & {tuple(e) for e in c['active_edges']}:
+        p.error('duplicate exemptions or exemption overlaps required active edges')
+    failed=validate(make_query(a.mimir),c,a.namespace,a.max_age,a.experiment,a.scenario)
     print('FAILED: '+', '.join(failed) if failed else 'METRIC ACCEPTANCE PASSED (not full workflow or semantic acceptance)')
     return bool(failed)
 

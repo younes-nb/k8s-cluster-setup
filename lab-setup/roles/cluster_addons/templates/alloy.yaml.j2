@@ -66,18 +66,19 @@ data:
       forward_to = [prometheus.remote_write.mimir.receiver]
     }
 
+    // Kubelet operational metrics only. Standalone cAdvisor is the sole container-statistics owner.
     prometheus.scrape "kubelet" {
       targets = [
         {% for node in groups['control_plane'] + groups['workers'] %}
-        {"__address__" = "{{ cloudlab_private_ips[node] }}:10250", "__metrics_path__" = "/metrics/cadvisor", "node" = "{{ node }}"},
+        {"__address__" = "{{ cloudlab_private_ips[node] }}:10250", "__metrics_path__" = "/metrics", "node" = "{{ node }}"},
         {% endfor %}
       ]
       forward_to = [prometheus.remote_write.mimir.receiver]
-      scrape_interval = "3s"
-      scrape_timeout = "2s"
-      // Preserve collection time; faster scraping cannot refresh cached stats.
+      scrape_interval = "5s"
+      scrape_timeout = "4s"
+      // Preserve timestamps; do not scrape /metrics/cadvisor here.
       honor_timestamps = true
-      job_name = "prometheus.scrape.kubelet"
+      job_name = "lab-kubelet"
       scheme = "https"
       bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
       tls_config {

@@ -117,10 +117,11 @@ data:
       }
     }
     prometheus.scrape "cadvisor" {
-      targets = [{"__address__" = "127.0.0.1:8080", "node" = sys.env("NODE_NAME")}]
+      targets = [{"__address__" = "127.0.0.1:8080", "node" = sys.env("NODE_NAME"), "instance" = sys.env("NODE_NAME")}]
       scrape_interval = "5s"
       scrape_timeout = "4s"
       job_name = "integrations/cadvisor"
+      honor_timestamps = true
       forward_to = [prometheus.relabel.cadvisor.receiver]
     }
     discovery.relabel "self" {

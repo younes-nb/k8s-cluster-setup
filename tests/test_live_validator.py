@@ -33,5 +33,16 @@ class NegativeTests(unittest.TestCase):
         t=Validation(lambda _:[{'metric':{'client':'a','server':'b'},'value':[0,'NaN']}])
         t.expected_edges('edges','x',{('a','b')},lambda v:v>=0)
         self.assertTrue(t.failures)
+    def test_missing_unexpected_edge_fails_even_without_histogram(self):
+        row={'metric':{'client':'web','server':'api'},'value':[0,'2']}
+        t=Validation(lambda _: [row]); t.no_unexpected_missing_edges('missing','x',{('api','db')})
+        self.assertEqual(t.failures,['missing'])
+    def test_documented_non_http_edge_is_exempt(self):
+        row={'metric':{'client':'api','server':'db'},'value':[0,'2']}
+        t=Validation(lambda _: [row]); t.no_unexpected_missing_edges('missing','x',{('api','db')})
+        self.assertFalse(t.failures)
+    def test_no_missing_edges(self):
+        t=Validation(lambda _: []); t.no_unexpected_missing_edges('missing','x',set())
+        self.assertFalse(t.failures)
 if __name__=='__main__': unittest.main()
 

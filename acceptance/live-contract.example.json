@@ -43,5 +43,6 @@
   ],
   "rabbitmq_pods": [
     "REPLACE_WITH_CURRENT_RABBITMQ_POD_FROM_KUBERNETES_API"
-  ]
+  ],
+  "latency_exempt_edges": []
 }

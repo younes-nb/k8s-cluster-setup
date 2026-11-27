@@ -23,4 +23,25 @@ class TestK6Stream(unittest.TestCase):
         with self.assertRaises(ValueError): verify_progress(before,before)
         with self.assertRaises(ValueError): verify_progress(after,before)
 
+    def test_scenario_is_selected(self):
+        def query(expr):
+            self.assertIn('scenario="api"', expr)
+            return self.query(expr)
+        snapshot(query,'run1',scenario='api')
+    def test_sparse_event_is_unknown(self):
+        def query(expr):
+            return [] if 'k6_lab_failed_total' in expr else self.query(expr)
+        result=snapshot(query,'run1')
+        self.assertIsNone(result['k6_lab_failed_total']['total'])
+        self.assertIsNone(result['k6_lab_failed_total']['max_age_seconds'])
+    def test_present_event_missing_age_fails(self):
+        def query(expr):
+            return [] if expr.startswith('time()') and 'k6_lab_failed_total' in expr else self.query(expr)
+        with self.assertRaises(ValueError): snapshot(query,'run1')
+    def test_observed_event_disappearing_fails(self):
+        before={k:{'total':1} for k in COUNTERS}
+        after={k:{'total':2} for k in COUNTERS}
+        after['k6_lab_failed_total']['total']=None
+        with self.assertRaises(ValueError): verify_progress(before,after)
+
 if __name__=='__main__': unittest.main()

@@ -770,7 +770,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by(namespace,pod,container)(time()-timestamp(container_cpu_usage_seconds_total{job=\"prometheus.scrape.kubelet\",namespace=\"train-ticket\",container!=\"\",container!=\"POD\"})) and on(namespace,pod,container) (max by(namespace,pod,container)(kube_pod_container_status_running{namespace=\"train-ticket\"} == 1))",
+          "expr": "max by(namespace,pod,container)(time()-timestamp(container_cpu_usage_seconds_total{job=\"integrations/cadvisor\",namespace=\"train-ticket\",container!=\"\",container!=\"POD\"})) and on(namespace,pod,container) (max by(namespace,pod,container)(kube_pod_container_status_running{namespace=\"train-ticket\"} == 1))",
           "legendFormat": "{{pod}} / {{container}}",
           "range": true
         }

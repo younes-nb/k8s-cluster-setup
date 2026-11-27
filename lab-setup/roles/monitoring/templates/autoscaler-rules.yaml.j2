@@ -34,14 +34,14 @@ groups:
   # are lab_attempted, lab_good, etc. Do NOT record aliases under raw names:
   # rule evaluation timestamps would conceal stale producer data and can collide.
   - record: autoscaler:pod_cpu:cores
-    expr: sum by(namespace,pod) (rate(container_cpu_usage_seconds_total{container!="",container!="POD",image!=""}[1m]))
+    expr: sum by(namespace,pod) (rate(container_cpu_usage_seconds_total{job="integrations/cadvisor",container!="",container!="POD",image!=""}[1m]))
   - record: autoscaler:pod_cpu:request_ratio
     expr: autoscaler:pod_cpu:cores / on(namespace,pod) (sum by(namespace,pod) (kube_pod_container_resource_requests{resource="cpu",unit="core"}) > 0) and on(namespace,pod) (count by(namespace,pod) (kube_pod_container_resource_requests{resource="cpu",unit="core"} > 0) == count by(namespace,pod) (kube_pod_container_info))
   - record: autoscaler:deployment_unavailable:replicas
     expr: clamp_min(kube_deployment_spec_replicas - on(namespace,deployment) kube_deployment_status_replicas_available,0)
 
   - record: autoscaler:pod_cpu:throttling_ratio
-    expr: sum by(namespace,pod)(rate(container_cpu_cfs_throttled_periods_total{container!="",container!="POD"}[1m])) / (sum by(namespace,pod)(rate(container_cpu_cfs_periods_total{container!="",container!="POD"}[1m])) > 0)
+    expr: sum by(namespace,pod)(rate(container_cpu_cfs_throttled_periods_total{job="integrations/cadvisor",container!="",container!="POD"}[1m])) / (sum by(namespace,pod)(rate(container_cpu_cfs_periods_total{job="integrations/cadvisor",container!="",container!="POD"}[1m])) > 0)
   - record: autoscaler:client_failure:ratio
     expr: sum by(experiment)(rate(k6_lab_failed_total[1m])) / (sum by(experiment)(rate(k6_lab_attempted_total[1m])) > 0)
   - record: autoscaler:client_outstanding:requests

@@ -97,6 +97,20 @@ check(svc.get("allocateLoadBalancerNodePorts") is False,
       "Gateway LoadBalancer allocates no NodePorts")
 check(svc.get("type") == "LoadBalancer", "Gateway Service type is LoadBalancer")
 
+# ---- 3b. one canonical container metrics owner -------------------------
+cluster_conf = (ADDONS / 'templates/alloy.yaml.j2').read_text()
+node_conf = (ADDONS / 'templates/alloy-node.yaml.j2').read_text()
+check('"__metrics_path__" = "/metrics/cadvisor"' not in cluster_conf and 'job_name = "prometheus.scrape.kubelet"' not in cluster_conf,
+      'legacy kubelet cAdvisor collector removed')
+check('job_name = "integrations/cadvisor"' in node_conf and 'honor_timestamps = true' in node_conf,
+      'standalone cAdvisor source timestamps preserved')
+for rule in rendered.get('autoscaler-rules.yaml.j2', [{}])[0].get('groups', []):
+    for record in rule.get('rules', []):
+        expr = record.get('expr', '')
+        if 'container_cpu_' in expr:
+            import re
+            check(all('job="integrations/cadvisor"' in sel for sel in re.findall(r'container_cpu_\w+\{([^}]+)\}', expr)), 'canonical CPU job in ' + record['record'])
+
 # ---- 4. dashboards -------------------------------------------------------
 uids, panels = set(), 0
 bad_dash = []

@@ -234,7 +234,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by(pod)(rate(container_cpu_usage_seconds_total{namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}[1m])))",
+          "expr": "topk(20, sum by(pod)(rate(container_cpu_usage_seconds_total{job=\"integrations/cadvisor\",namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}[1m])))",
           "legendFormat": "{{pod}}",
           "range": true
         }
@@ -284,7 +284,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by(pod)(rate(container_cpu_cfs_throttled_periods_total{namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}[1m])) / sum by(pod)(rate(container_cpu_cfs_periods_total{namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}[1m])))",
+          "expr": "topk(20, sum by(pod)(rate(container_cpu_cfs_throttled_periods_total{job=\"integrations/cadvisor\",namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}[1m])) / sum by(pod)(rate(container_cpu_cfs_periods_total{job=\"integrations/cadvisor\",namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}[1m])))",
           "legendFormat": "{{pod}}",
           "range": true
         }
@@ -334,7 +334,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by(pod)(container_memory_working_set_bytes{namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}))",
+          "expr": "topk(20, sum by(pod)(container_memory_working_set_bytes{job=\"integrations/cadvisor\",namespace=\"train-ticket\",container!=\"\",container!=\"POD\"}))",
           "legendFormat": "{{pod}}",
           "range": true
         }
