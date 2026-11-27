@@ -4,6 +4,7 @@ import argparse
 import copy
 import importlib.util
 import json
+import os
 import pathlib
 import shutil
 import yaml
@@ -47,8 +48,12 @@ def prepare(source, out, renderer, probes):
         replace_once(f, old, new)
     replace_once(nacos/'service.yaml', '  clusterIP: None', '  clusterIP: None\n  publishNotReadyAddresses: true')
     replace_once(nacos/'service.yaml', '      name: rpc\n      targetPort: 7848', '      name: rpc\n      targetPort: 7848\n    - {name: client-rpc, port: 9848, targetPort: 9848}\n    - {name: raft-rpc, port: 9849, targetPort: 9849}')
-    # Allow all members to initialize before readiness; avoid OrderedReady quorum deadlock.
-    replace_once(nacos/'statefulset.yaml', 'podManagementPolicy: OrderedReady', 'podManagementPolicy: Parallel')
+    # Parallel avoids OrderedReady init quorum deadlock on FRESH installs, but the
+    # podManagementPolicy of an existing StatefulSet is immutable. Preserve
+    # OrderedReady for existing installs (per-pod readiness is non-quorum, so no
+    # deadlock); only switch to Parallel when explicitly requested for a fresh one.
+    if os.environ.get('TT_NACOS_PARALLEL', '0') == '1':
+        replace_once(nacos/'statefulset.yaml', 'podManagementPolicy: OrderedReady', 'podManagementPolicy: Parallel')
     for name, file, container in [('nacos','statefulset.yaml','k8snacos'), ('rabbitmq','deployment.yaml','rabbitmq')]:
         f = out/name/'templates'/file
         if name not in probes:
