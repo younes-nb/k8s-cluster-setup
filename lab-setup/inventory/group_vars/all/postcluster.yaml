@@ -472,8 +472,8 @@ tt_probe_overrides:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:12862/);
-          case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
+        - wget -q -O /dev/null http://127.0.0.1:12862/; case $? in 0|8) exit 0;; *)
+          exit 1;; esac
       failureThreshold: 3
       periodSeconds: 5
       timeoutSeconds: 3
@@ -482,8 +482,8 @@ tt_probe_overrides:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:12862/);
-          case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
+        - wget -q -O /dev/null http://127.0.0.1:12862/; case $? in 0|8) exit 0;; *)
+          exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
       timeoutSeconds: 3
