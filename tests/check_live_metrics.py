@@ -91,7 +91,7 @@ def validate(query, contract, namespace='train-ticket', max_age=15, experiment='
     active_cpu_age = '('+cpu_age+') and on(namespace,pod,container) ('+running+')'
     node_age = 'max by(node)(('+active_cpu_age+') * on(namespace,pod) group_left(node) max by(namespace,pod,node)(kube_pod_info{node!=""}))'
     t.identities('cAdvisor per-node source freshness',node_age,'node',NODES,lambda v:-2<=v<=max_age)
-    t.exact_identities('cAdvisor scrape targets healthy','up{job="integrations/cadvisor"}','node',NODES,lambda v:v==1)
+    t.exact_identities('cAdvisor scrape targets healthy','up{job="prometheus.scrape.cadvisor"}','node',NODES,lambda v:v==1)
     t.identities('all expected benchmark deployments desired','kube_deployment_spec_replicas'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.identities('all benchmark deployments available','kube_deployment_status_replicas_available'+filt,'deployment',contract['deployments'],lambda v:v>=1)
     t.values('no unavailable benchmark replicas','autoscaler:deployment_unavailable:replicas'+filt,lambda v:v==0)
