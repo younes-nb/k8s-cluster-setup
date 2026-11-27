@@ -472,7 +472,7 @@ tt_probe_overrides:
         command:
         - /bin/sh
         - -ec
-        - wget -q -O /dev/null http://127.0.0.1:12862/; case $? in 0|8) exit 0;; *)
+        - rc=0; wget -q -O /dev/null http://127.0.0.1:12862/ || rc=$?; case "$rc" in 0|8) exit 0;; *)
           exit 1;; esac
       failureThreshold: 3
       periodSeconds: 5
@@ -482,7 +482,7 @@ tt_probe_overrides:
         command:
         - /bin/sh
         - -ec
-        - wget -q -O /dev/null http://127.0.0.1:12862/; case $? in 0|8) exit 0;; *)
+        - rc=0; wget -q -O /dev/null http://127.0.0.1:12862/ || rc=$?; case "$rc" in 0|8) exit 0;; *)
           exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
@@ -1115,3 +1115,12 @@ tt_scalable_deployments:
 - ts-verification-code-service
 - ts-voucher-service
 - ts-wait-order-service
+
+# Complete plugin list verified against the exact deployed RabbitMQ image.
+# Must include rabbitmq_prometheus and preserve existing explicitly enabled plugins.
+tt_rabbitmq_enabled_plugins: [rabbitmq_management_agent, rabbitmq_web_dispatch, rabbitmq_prometheus]
+# Only dedicated health/metrics paths; NEVER ignore / globally.
+beyla_ignored_probe_paths:
+- /nacos/actuator/health
+- /nacos/actuator/prometheus
+- /metrics
