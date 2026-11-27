@@ -5,7 +5,7 @@ groups:
   - record: autoscaler:edge_requests:rate1m
     expr: sum by (client,server,client_namespace,server_namespace) (rate(traces_service_graph_request_total[1m]))
   - record: autoscaler:edge_latency:p90_seconds
-    expr: histogram_quantile(0.90, sum by (client,server,client_namespace,server_namespace,le) (rate(traces_service_graph_request_client_seconds_bucket[1m])))
+    expr: histogram_quantile(0.90, sum by (client,server,client_namespace,server_namespace,le) (rate(traces_service_graph_request_client_seconds_bucket[1m]))) and on(client,server) (sum by(client,server) (rate(traces_service_graph_request_client_seconds_bucket{le="+Inf"}[1m])) > 0)
   - record: autoscaler:edge_failure:rate1m
     expr: sum by (client,server,client_namespace,server_namespace) (rate(traces_service_graph_request_failed_total[1m]))
   - record: autoscaler:edge_slo:violation
@@ -16,6 +16,18 @@ groups:
     expr: histogram_quantile(0.90, sum by (service_name,k8s_namespace_name,le) (rate(http_server_request_duration_seconds_bucket[1m])))
   - record: autoscaler:frontend_slo:violation
     expr: (autoscaler:service_latency:p90_seconds{service_name="ts-ui-dashboard",k8s_namespace_name="{{ tt_ns }}"} > bool {{ tt_slo_seconds }}) and (autoscaler:service_requests:rate1m{service_name="ts-ui-dashboard",k8s_namespace_name="{{ tt_ns }}"} > 0) and (autoscaler:service_latency:p90_seconds >= 0)
+  # k6 prometheus remote-write mangles custom counter names (k6_lab_x -> k6_k6_lab_x_total).
+  # Alias back to the canonical names the acceptance check and rules expect.
+  - record: k6_lab_attempted_total
+    expr: k6_k6_lab_attempted_total_total
+  - record: k6_lab_good_total
+    expr: k6_k6_lab_good_total_total
+  - record: k6_lab_slow_success_total
+    expr: k6_k6_lab_slow_success_total_total
+  - record: k6_lab_failed_total
+    expr: k6_k6_lab_failed_total_total
+  - record: k6_lab_timeout_total
+    expr: k6_k6_lab_timeout_total_total
   - record: autoscaler:pod_cpu:cores
     expr: sum by(namespace,pod) (rate(container_cpu_usage_seconds_total{container!="",container!="POD",image!=""}[1m]))
   - record: autoscaler:pod_cpu:request_ratio

@@ -178,6 +178,10 @@ data:
         target_label = "instance"
         replacement = "{{ name }}"
       }
+      rule {
+        target_label = "job"
+        replacement = "lab-mysql"
+      }
     }
     prometheus.scrape "mysql_{{ loop.index }}" {
       targets = discovery.relabel.mysql_{{ loop.index }}.output
