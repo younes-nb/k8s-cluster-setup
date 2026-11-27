@@ -1,0 +1,101 @@
+---
+# Standalone, Xenon-free MySQL for a Train Ticket quickstart component.
+# Replaces the RadonDB/Xenon chart, whose leader election fails on this cluster:
+# the xenon sidecar connects to "localhost" (IPv6 ::1) as root, but the image
+# only creates root@localhost / root@127.0.0.1, so every ping is denied and no
+# leader is ever labelled. A single primary with MYSQL_ROOT_HOST=% creates
+# root@'%' (matches ::1 and 127.0.0.1) and needs no leader election.
+#
+# Required vars: mysql_name, mysql_namespace, mysql_database, mysql_user,
+# mysql_password, mysql_root_password, mysql_storage, mysql_image.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ mysql_name }}-secret
+  namespace: {{ mysql_namespace }}
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: "{{ mysql_root_password }}"
+  MYSQL_DATABASE: "{{ mysql_database }}"
+  MYSQL_USER: "{{ mysql_user }}"
+  MYSQL_PASSWORD: "{{ mysql_password }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ mysql_name }}-leader
+  namespace: {{ mysql_namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ mysql_name }}
+  ports:
+    - {name: mysql, port: 3306, targetPort: 3306}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ mysql_name }}
+  namespace: {{ mysql_namespace }}
+spec:
+  clusterIP: None
+  selector:
+    app: {{ mysql_name }}
+  ports:
+    - {name: mysql, port: 3306, targetPort: 3306}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ mysql_name }}
+  namespace: {{ mysql_namespace }}
+spec:
+  serviceName: {{ mysql_name }}
+  replicas: 1
+  selector:
+    matchLabels: {app: {{ mysql_name }}}
+  template:
+    metadata:
+      labels: {app: {{ mysql_name }}}
+    spec:
+      containers:
+        - name: mysql
+          image: {{ mysql_image }}
+          args:
+            - --server-id=1
+            - --log-bin=mysql-bin
+            - --binlog-format=ROW
+            - --gtid-mode=ON
+            - --enforce-gtid-consistency=ON
+            # ~60 Train Ticket services each open a HikariCP pool; the default
+            # 151 connections is exhausted ("Too many connections") and the
+            # services crash-loop. This is a DB setting, not an app resource.
+            - --max-connections=1000
+          envFrom:
+            - secretRef: {name: {{ mysql_name }}-secret}
+          env:
+            - name: MYSQL_ROOT_HOST
+              value: "%"
+          ports:
+            - {name: mysql, containerPort: 3306}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysql -uroot -p\"$MYSQL_ROOT_PASSWORD\" -e 'SELECT 1'"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: {cpu: "500m", memory: "1Gi"}
+            limits: {cpu: "2", memory: "4Gi"}
+          volumeMounts:
+            - {name: "{{ mysql_pvc_name }}", mountPath: /var/lib/mysql}
+  volumeClaimTemplates:
+    - metadata:
+        name: "{{ mysql_pvc_name }}"
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ storage_class | default('local-path') }}
+        resources:
+          requests:
+            storage: {{ mysql_storage | default('10Gi') }}

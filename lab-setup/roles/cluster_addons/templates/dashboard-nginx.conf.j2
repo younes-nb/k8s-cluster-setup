@@ -8,6 +8,10 @@ http {
   include mime.types;
   default_type  application/octet-stream;
 
+  # Resolve service names dynamically (the user-service upstream 503s when the
+  # static name is resolved once at startup).
+  resolver 10.233.0.10 valid=10s ipv6=off;
+
 
   sendfile        on;
 
@@ -37,7 +41,8 @@ http {
     }
 
     location /api/v1/userservice/users {
-      proxy_pass   http://ts-user-service:12342;
+      set $user_upstream http://ts-user-service:12342;
+      proxy_pass $user_upstream;
     }
     location /api/v1/users/auth {
       proxy_pass   http://ts-auth-service:12340;

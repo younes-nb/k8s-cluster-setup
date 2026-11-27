@@ -1,10 +1,11 @@
 ---
-# Deploy the pinned upstream TrainTicket 0.0.4 workload with its OWN resource
-# requests/limits/JVM settings preserved (via templates/inject_selectors.py). No Istio, no NodePorts, no in-namespace
-# Gateway API proxy: the application path is the Envoy Gateway VIP.
+# Deploy the pinned Train Ticket master snapshot (313886e) with the
+# quickstart-k8s manifests, but with a Xenon-free standalone MySQL for both
+# Nacos and the application. The RadonDB/Xenon chart cannot elect a leader on
+# this cluster (xenon pings root@::1 while the image only creates
+# root@localhost / root@127.0.0.1), so the infra DB is a single primary.
 #
-# The playbook that applies this refuses to run if any HPA already owns the
-# benchmark Deployments -- a second replica writer is never allowed.
+# Topology is explicit (tt_db_topology): standalone-nacos | standalone-all.
 
 - name: Ensure the Train-Ticket namespace exists
   kubernetes.core.k8s:
@@ -16,10 +17,6 @@
       metadata:
         name: "{{ tt_ns }}"
 
-# The renderer pins every workload pod to ``lab.example.com/worker=true`` so the
-# benchmark never lands on a control-plane node. The label must exist before the
-# first rollout, otherwise every pod stays Pending with
-# "didn't match Pod's node affinity/selector".
 - name: Label the designated workers for the benchmark
   ansible.builtin.command: >-
     kubectl --kubeconfig={{ kubeconfig_path }} label node {{ item }}
@@ -35,40 +32,19 @@
     update_cache: yes
   become: true
 
-- name: Clone/Update the Train-Ticket repo (shallow, pinned tag)
+- name: Stage a clean pinned Train-Ticket checkout
+  ansible.builtin.file:
+    path: "{{ tt_clone_dir }}"
+    state: absent
+  become: true
+
+- name: Clone the pinned Train-Ticket snapshot
   ansible.builtin.git:
     repo: "{{ tt_repo_url }}"
     dest: "{{ tt_clone_dir }}"
-    version: "{{ tt_repo_version }}"
+    version: "{{ tt_repo_commit }}"
     depth: 1
-    force: true
-    # update: no keeps reruns idempotent. The module's update path crashes on an
-    # existing detached-HEAD tag clone ("'NoneType' object has no attribute
-    # 'startswith'"); a pinned tag never needs a git update.
-    update: no
   register: _tt_git
-
-- name: Stage the upstream manifest renderer
-  ansible.builtin.copy:
-    src: "{{ role_path }}/templates/inject_selectors.py"
-    dest: "{{ tt_clone_dir }}/inject_selectors.py"
-    mode: "0755"
-
-- name: Render apply-ready manifests (selectors, worker placement, probes)
-  ansible.builtin.command: >
-    python3 "{{ tt_clone_dir }}/inject_selectors.py"
-    --out "{{ tt_clone_dir }}/deployment/k8s-deployment.ready"
-    "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part1.yml"
-    "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part2.yml"
-    "{{ tt_clone_dir }}/deployment/k8s-deployment/ts-deployment-part3.yml"
-  environment:
-    TT_REQUIRE_VERIFIED_PROBES: "{{ tt_require_verified_probes | bool | ternary('true', 'false') }}"
-    TT_STORAGE_CLASS: "{{ storage_class }}"
-    TT_DB_PVC_SIZE: "{{ tt_db_pvc_size }}"
-    TT_PROBES: "{{ tt_probe_overrides | to_json }}"
-    TT_MONGO_IMAGE: "{{ tt_mongo_image }}"
-    TT_MYSQL_IMAGE: "{{ tt_mysql_image }}"
-  changed_when: false
 
 - name: Record upstream commit
   ansible.builtin.command: git -C {{ tt_clone_dir }} rev-parse HEAD
@@ -77,80 +53,164 @@
 - ansible.builtin.debug:
     var: tt_commit.stdout
 
-- name: Record rendered benchmark file digests
-  ansible.builtin.command: >-
-    sha256sum {{ tt_clone_dir }}/deployment/k8s-deployment.ready/ts-deployment-part1.yml
-    {{ tt_clone_dir }}/deployment/k8s-deployment.ready/ts-deployment-part2.yml
-    {{ tt_clone_dir }}/deployment/k8s-deployment.ready/ts-deployment-part3.yml
-  register: tt_manifest_digests
-  changed_when: false
-- ansible.builtin.debug:
-    var: tt_manifest_digests.stdout_lines
+- name: Remove any prior RadonDB/Xenon infra releases (clean topology)
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path }}"
+    name: "{{ item }}"
+    release_namespace: "{{ tt_ns }}"
+    state: absent
+  loop: [nacosdb, nacos, rabbitmq, tsdb]
+  failed_when: false
 
-- name: Refuse to act if a native HPA already owns the benchmark
-  ansible.builtin.command: >-
-    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} get hpa -o json
-  register: _hpa
-  changed_when: false
+- name: Remove prior standalone MySQL StatefulSets (PVCs retained)
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: absent
+    api_version: apps/v1
+    kind: StatefulSet
+    name: "{{ item }}"
+    namespace: "{{ tt_ns }}"
+  loop: [nacosdb-mysql, ts-mysql]
+  failed_when: false
 
-- name: Require a quiescent benchmark before applying replica declarations
-  ansible.builtin.assert:
-    that: (_hpa.stdout | from_json)['items'] | length == 0
-    fail_msg: >-
-      Native HPAs are present. Stop external autoscalers and remove them before
-      benchmark setup: never run two replica writers against one Deployment.
+- name: Generate stable database credentials
+  ansible.builtin.set_fact:
+    nacos_db_user: "nacos"
+    nacos_db_pass: "{{ lookup('file', '/tmp/opencode/nacos_db_pass.txt') | trim }}"
+    nacos_root_pass: "{{ lookup('file', '/tmp/opencode/nacos_root_pass.txt') | trim }}"
+    ts_db_user: "ts"
+    ts_db_pass: "{{ lookup('file', '/tmp/opencode/ts_db_pass.txt') | trim }}"
+    ts_root_pass: "{{ lookup('file', '/tmp/opencode/ts_root_pass.txt') | trim }}"
+  no_log: true
 
-- name: Require explicit exclusive replica ownership
-  ansible.builtin.assert:
-    that: not (lookup('env', 'LAB_EXCLUSIVE_WRITER_CONFIRMED') != 'true')
-    fail_msg: Set LAB_EXCLUSIVE_WRITER_CONFIRMED=true only after stopping other replica writers.
+- name: Deploy standalone Nacos MySQL
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    template: standalone-mysql.yaml.j2
+  vars:
+    mysql_name: nacosdb-mysql
+    mysql_namespace: "{{ tt_ns }}"
+    mysql_database: nacos
+    mysql_user: "{{ nacos_db_user }}"
+    mysql_password: "{{ nacos_db_pass }}"
+    mysql_root_password: "{{ nacos_root_pass }}"
+    mysql_storage: 10Gi
+    mysql_image: "{{ tt_mysql_image }}"
+    mysql_pvc_name: "mysqldata-{{ lookup('pipe', 'date +%s') }}"
+  no_log: true
 
-- name: Apply the upstream manifests (resources unchanged)
+- name: Wait for the standalone Nacos MySQL
   ansible.builtin.command: >-
     kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
-    apply -f "{{ tt_clone_dir }}/deployment/k8s-deployment.ready/{{ item }}"
-  loop: [ts-deployment-part1.yml, ts-deployment-part2.yml, ts-deployment-part3.yml]
-  register: _tt_apply
-  changed_when: "'created' in _tt_apply.stdout or 'configured' in _tt_apply.stdout"
+    rollout status statefulset/nacosdb-mysql --timeout=600s
+  changed_when: false
 
-- name: Configure the frontend proxy for the benchmark API paths
+- name: Deploy standalone application MySQL
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig_path }}"
     state: present
-    definition:
-      apiVersion: v1
-      kind: ConfigMap
-      metadata: {name: ts-ui-dashboard-nginx, namespace: "{{ tt_ns }}"}
-      data:
-        nginx.conf: "{{ lookup('template', 'dashboard-nginx.conf.j2') }}"
+    template: standalone-mysql.yaml.j2
+  vars:
+    mysql_name: ts-mysql
+    mysql_namespace: "{{ tt_ns }}"
+    mysql_database: ts
+    mysql_user: "{{ ts_db_user }}"
+    mysql_password: "{{ ts_db_pass }}"
+    mysql_root_password: "{{ ts_root_pass }}"
+    mysql_storage: "{{ tt_db_pvc_size }}"
+    mysql_image: "{{ tt_mysql_image }}"
+    mysql_pvc_name: "mysqldata-{{ lookup('pipe', 'date +%s') }}"
+  when: tt_db_topology == 'standalone-all'
+  no_log: true
 
-- name: Mount the frontend proxy configuration
-  kubernetes.core.k8s:
+- name: Wait for the standalone application MySQL
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+    rollout status statefulset/ts-mysql --timeout=600s
+  when: tt_db_topology == 'standalone-all'
+  changed_when: false
+
+- name: Install Nacos (with its standalone DB)
+  kubernetes.core.helm:
     kubeconfig: "{{ kubeconfig_path }}"
-    state: present
-    merge_type: strategic-merge
-    definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata: {name: ts-ui-dashboard, namespace: "{{ tt_ns }}"}
-      spec:
-        template:
-          metadata:
-            annotations:
-              lab.example.com/proxy-config: "{{ lookup('template', 'dashboard-nginx.conf.j2') | hash('sha256') }}"
-          spec:
-            containers:
-              - name: ts-ui-dashboard
-                volumeMounts:
-                  - {name: nginx-override, mountPath: /usr/local/openresty/nginx/conf/nginx.conf, subPath: nginx.conf}
-            volumes:
-              - name: nginx-override
-                configMap: {name: ts-ui-dashboard-nginx}
+    name: nacos
+    chart_ref: "{{ tt_clone_dir }}/deployment/kubernetes-manifests/quickstart-k8s/charts/nacos"
+    release_namespace: "{{ tt_ns }}"
+    create_namespace: false
+    wait: false
+    values:
+      nacos:
+        db:
+          host: nacosdb-mysql-leader
+          username: "{{ nacos_db_user }}"
+          password: "{{ nacos_db_pass }}"
+          name: nacos
+  no_log: true
+
+- name: Align the Nacos DB password with the standalone DB (chart secret typo)
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} patch secret nacos-mysql
+    --type merge -p '{"data":{"MYSQL_SERVICE_PASSWORD":"{{ nacos_db_pass | b64encode }}"}}'
+  no_log: true
+
+- name: Restart Nacos so it reads the corrected secret
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} delete pod nacos-0 --ignore-not-found
+  changed_when: true
+
+- name: Wait for Nacos
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
+    rollout status statefulset/nacos --timeout=600s
+  changed_when: false
+
+- name: Expose the Nacos gRPC ports (chart regular Service omits 9848/9849)
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} patch svc nacos --type merge
+    -p '{"spec":{"type":"ClusterIP","ports":[{"name":"server","port":8848,"targetPort":8848},{"name":"rpc","port":7848,"targetPort":7848},{"name":"grpc","port":9848,"targetPort":9848},{"name":"raft","port":9849,"targetPort":9849}]}}'
+  changed_when: true
+
+- name: Install RabbitMQ
+  kubernetes.core.helm:
+    kubeconfig: "{{ kubeconfig_path }}"
+    name: rabbitmq
+    chart_ref: "{{ tt_clone_dir }}/deployment/kubernetes-manifests/quickstart-k8s/charts/rabbitmq"
+    release_namespace: "{{ tt_ns }}"
+    create_namespace: false
+    wait: true
+
+- name: Generate per-service DB secrets and the app deploy manifest
+  ansible.builtin.command: >-
+    bash -c 'source hack/deploy/utils.sh && gen_secret_for_services {{ ts_db_user }} {{ ts_db_pass }} ts ts-mysql-leader && cp deployment/kubernetes-manifests/quickstart-k8s/yamls/deploy.yaml.sample deployment/kubernetes-manifests/quickstart-k8s/yamls/deploy.yaml'
+  args:
+    chdir: "{{ tt_clone_dir }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+    PATH: "/usr/local/bin:/usr/bin:/bin"
+  when: tt_db_topology == 'standalone-all'
+  no_log: true
+
+- name: Apply the application Service and Deployment manifests
+  ansible.builtin.command: >-
+    kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }} apply -f {{ item }}
+  loop:
+    - deployment/kubernetes-manifests/quickstart-k8s/yamls/secret.yaml
+    - deployment/kubernetes-manifests/quickstart-k8s/yamls/svc.yaml
+    - deployment/kubernetes-manifests/quickstart-k8s/yamls/deploy.yaml
+  args:
+    chdir: "{{ tt_clone_dir }}"
+  when: tt_db_topology == 'standalone-all'
 
 - name: Wait for every benchmark Deployment to finish rolling out
   ansible.builtin.command: >-
     kubectl --kubeconfig={{ kubeconfig_path }} -n {{ tt_ns }}
     rollout status deployment --timeout=1800s
-  register: _rollout
+  when: tt_db_topology == 'standalone-all'
   changed_when: false
 
+- name: Report the deployed release
+  ansible.builtin.debug:
+    msg:
+      - "Train Ticket {{ tt_repo_commit }} ({{ tt_commit.stdout }}) deployed in {{ tt_ns }}"
+      - "database topology: {{ tt_db_topology }}; images: service-specific from the snapshot"

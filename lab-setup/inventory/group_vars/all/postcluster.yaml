@@ -20,7 +20,12 @@ alloy_scrape_interval: 5s
 beyla_image: docker.io/grafana/beyla:3.37.0
 tt_ns: train-ticket
 tt_repo_url: https://github.com/FudanSELab/train-ticket.git
-tt_repo_version: 0.0.4
+tt_repo_version: v1.0.0
+# Intended reference is the uploaded master snapshot, not the v1.0.0 tag.
+tt_repo_commit: 313886e99befb94be6cd45f085c98e0019f59829
+# Database topology: standalone-nacos (Nacos DB only) | standalone-all (Nacos + app).
+tt_db_topology: standalone-all
+tt_mysql_image: mysql:5.7.34
 tt_clone_dir: /tmp/train-ticket
 tt_min_replicas: 1
 tt_max_replicas: 10
@@ -28,7 +33,6 @@ tt_cpu_avg_utilization: 80
 tt_wait_retries: 180
 tt_wait_delay: 5
 tt_mongo_image: mongo:4.4
-tt_mysql_image: mysql:8.0
 tt_db_pvc_size: 2Gi
 tt_mongo_data_path: /data/db
 tt_mysql_data_path: /var/lib/mysql
