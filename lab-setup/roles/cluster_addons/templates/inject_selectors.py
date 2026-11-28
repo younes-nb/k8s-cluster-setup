@@ -104,11 +104,11 @@ def render(docs, overrides):
                         # verify the real images and supply TT_PROBES where needed.
                         handler = {"exec": {"command": [
                             "/bin/sh", "-ec",
-                            "code=$(curl -sS --max-time 2 -o /dev/null "
+                            "code=$(curl -sS --max-time 5 -o /dev/null "
                             f"-w '%{{http_code}}' http://127.0.0.1:{port}/); "
                             'case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac']}}
                     c["readinessProbe"] = {**handler, "periodSeconds": 5,
-                                           "timeoutSeconds": 3, "failureThreshold": 3}
+                                           "timeoutSeconds": 5, "failureThreshold": 5}
                     c.setdefault("startupProbe", {**handler, "periodSeconds": 5,
                                                   "timeoutSeconds": 3,
                                                   "failureThreshold": 120})
