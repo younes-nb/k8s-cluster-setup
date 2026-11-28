@@ -53,420 +53,420 @@ tt_probe_overrides:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18767/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18767/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18767/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18767/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-admin-order-service/ts-admin-order-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16112/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16112/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16112/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16112/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-admin-route-service/ts-admin-route-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16113/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16113/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16113/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16113/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-admin-travel-service/ts-admin-travel-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16114/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16114/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16114/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16114/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-admin-user-service/ts-admin-user-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16115/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16115/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16115/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16115/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-assurance-service/ts-assurance-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-auth-service/ts-auth-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12340/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12340/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12340/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12340/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-avatar-service/ts-avatar-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:17001/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:17001/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:17001/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:17001/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-basic-service/ts-basic-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:15680/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:15680/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:15680/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:15680/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-cancel-service/ts-cancel-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18885/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18885/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18885/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18885/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-config-service/ts-config-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:15679/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:15679/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:15679/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:15679/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-consign-price-service/ts-consign-price-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16110/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16110/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16110/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16110/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-consign-service/ts-consign-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16111/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16111/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16111/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16111/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-contacts-service/ts-contacts-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12347/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12347/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12347/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12347/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-delivery-service/ts-delivery-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18808/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18808/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18808/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18808/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-execute-service/ts-execute-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12386/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12386/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12386/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12386/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-food-delivery-service/ts-food-delivery-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18957/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18957/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18957/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18957/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-food-service/ts-food-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18856/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18856/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18856/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18856/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-gateway-service/ts-gateway-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18888/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-inside-payment-service/ts-inside-payment-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18673/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18673/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18673/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18673/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-news-service/ts-news-service:
     readinessProbe:
       exec:
@@ -477,7 +477,7 @@ tt_probe_overrides:
           exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
@@ -487,532 +487,532 @@ tt_probe_overrides:
           exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-notification-service/ts-notification-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:17853/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:17853/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:17853/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:17853/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-order-other-service/ts-order-other-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12032/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12032/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12032/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12032/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-order-service/ts-order-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12031/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12031/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12031/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12031/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-payment-service/ts-payment-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:19001/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:19001/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:19001/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:19001/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-preserve-other-service/ts-preserve-other-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14569/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14569/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14569/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14569/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-preserve-service/ts-preserve-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14568/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14568/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14568/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14568/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-price-service/ts-price-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16579/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16579/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16579/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16579/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-rebook-service/ts-rebook-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18886/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18886/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18886/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18886/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-route-plan-service/ts-route-plan-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14578/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14578/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14578/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14578/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-route-service/ts-route-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:11178/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:11178/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:11178/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:11178/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-seat-service/ts-seat-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18898/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18898/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18898/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18898/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-security-service/ts-security-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:11188/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:11188/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:11188/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:11188/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-station-food-service/ts-station-food-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18855/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18855/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18855/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:18855/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-station-service/ts-station-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12345/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12345/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12345/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12345/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-ticket-office-service/ts-ticket-office-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16108/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16108/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16108/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16108/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-train-food-service/ts-train-food-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:19999/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:19999/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:19999/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:19999/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-train-service/ts-train-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14567/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14567/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14567/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14567/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-travel-plan-service/ts-travel-plan-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14322/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14322/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:14322/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:14322/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-travel-service/ts-travel-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12346/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12346/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12346/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12346/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-travel2-service/ts-travel2-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16346/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16346/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16346/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16346/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-ui-dashboard/ts-ui-dashboard:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-user-service/ts-user-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12342/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12342/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:12342/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:12342/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-verification-code-service/ts-verification-code-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:15678/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:15678/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:15678/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:15678/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-voucher-service/ts-voucher-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16101/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16101/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:16101/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:16101/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
   ts-wait-order-service/ts-wait-order-service:
     readinessProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:17525/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:17525/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 5
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
     startupProbe:
       exec:
         command:
         - /bin/sh
         - -ec
-        - code=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:17525/);
+        - code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:17525/);
           case "$code" in 2??|3??|401|403|404|405) exit 0;; *) exit 1;; esac
       failureThreshold: 120
       periodSeconds: 5
-      timeoutSeconds: 5
+      timeoutSeconds: 10
 tt_infra_probe_overrides:
   nacos:
     readinessProbe:
